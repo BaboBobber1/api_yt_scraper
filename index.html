@@ -168,6 +168,13 @@
       margin-bottom: 10px;
     }
 
+    .results-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
     .results {
       max-height: 320px;
       overflow: auto;
@@ -198,6 +205,15 @@
       color: var(--muted);
       min-height: 18px;
       font-size: 13px;
+    }
+
+    .enrichment-status {
+      margin: 6px 0 4px;
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
     }
   </style>
 </head>
@@ -247,8 +263,13 @@
     <section class="section" style="margin-top: 16px;">
       <div class="results-header">
         <div><strong>Unique channels: </strong><span id="channelCount">0</span></div>
-        <button class="ghost" id="downloadBtn">Download .txt</button>
+        <div class="results-actions">
+          <button class="ghost" id="enrichBtn">Enrich Channels</button>
+          <button class="ghost" id="downloadCsvBtn">Download CSV</button>
+          <button class="ghost" id="downloadBtn">Download .txt</button>
+        </div>
       </div>
+      <div class="enrichment-status" id="enrichmentStatus">Enriched channels: <span id="enrichedCount">0</span> / <span id="acceptedCount">0</span></div>
       <div class="results" id="results"></div>
     </section>
   </div>
@@ -262,11 +283,16 @@
     let knownChannels = new Set();
     const acceptedChannelIds = new Set();
     const channelHits = new Map();
+    const channelMeta = new Map();
+    const enrichedChannelIds = new Set();
+    const channelTextBuffer = new Map();
     let totalVideosProcessed = 0;
     let videosForCurrentKeyword = 0;
     let status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
+    let enriching = false;
 
     const MIN_CRYPTO_VIDEOS = 3;
+    const MAX_ENRICH_PER_RUN = 2000;
     const CRYPTO_KEYWORDS = [
       "bitcoin","btc","ethereum","eth","sol","solana","xrp","bnb","doge","dogecoin","avax",
       "crypto","cryptocurrency","altcoin","altcoins","memecoin","memecoins",
@@ -283,6 +309,8 @@
     const stopBtn = document.getElementById('stopBtn');
     const clearBtn = document.getElementById('clearBtn');
     const downloadBtn = document.getElementById('downloadBtn');
+    const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+    const enrichBtn = document.getElementById('enrichBtn');
     const stateEl = document.getElementById('state');
     const keywordEl = document.getElementById('currentKeyword');
     const videosProcessedEl = document.getElementById('videosProcessed');
@@ -292,11 +320,16 @@
     const statusMessageEl = document.getElementById('statusMessage');
     const resultsEl = document.getElementById('results');
     const channelCountEl = document.getElementById('channelCount');
+    const enrichedCountEl = document.getElementById('enrichedCount');
+    const acceptedCountEl = document.getElementById('acceptedCount');
+    const enrichmentStatusEl = document.getElementById('enrichmentStatus');
 
     startBtn.addEventListener('click', startScan);
     stopBtn.addEventListener('click', stopScan);
     clearBtn.addEventListener('click', clearResults);
     downloadBtn.addEventListener('click', downloadChannels);
+    downloadCsvBtn.addEventListener('click', downloadCsv);
+    enrichBtn.addEventListener('click', enrichChannels);
 
     function parseLines(value) {
       return value.split('\n').map(v => v.trim()).filter(Boolean);
@@ -334,6 +367,7 @@
       uniqueChannelsEl.textContent = knownChannels.size;
       apiKeyIndexEl.textContent = apiKeys.length ? `${currentKeyIndex + 1} / ${apiKeys.length}` : '0 / 0';
       channelCountEl.textContent = knownChannels.size;
+      updateEnrichmentStatus();
     }
 
     function updateProgress() {
@@ -364,6 +398,9 @@
       knownChannels.clear();
       acceptedChannelIds.clear();
       channelHits.clear();
+      channelMeta.clear();
+      enrichedChannelIds.clear();
+      channelTextBuffer.clear();
       resultsEl.innerHTML = '';
       totalVideosProcessed = 0;
       videosForCurrentKeyword = 0;
@@ -411,6 +448,9 @@
       totalVideosProcessed = 0;
       acceptedChannelIds.clear();
       channelHits.clear();
+      channelMeta.clear();
+      enrichedChannelIds.clear();
+      channelTextBuffer.clear();
       status = { state: 'Running', keyword: '', page: 0, keyIndex: 0 };
       setStatusMessage('Starting scan…');
       updateStatus();
@@ -440,6 +480,8 @@
             if (!channelId || !isCryptoVideo(title, description)) {
               continue;
             }
+
+            appendToChannelTextBuffer(channelId, title, description);
 
             const prevHits = channelHits.get(channelId) || 0;
             const newHits = prevHits + 1;
@@ -535,6 +577,233 @@
       }
 
       throw new Error(errorJson?.error?.message || `HTTP ${response.status}`);
+    }
+
+    function appendToChannelTextBuffer(channelId, title, description) {
+      const snippet = `${title} ${description || ''}`.trim();
+      if (!snippet) return;
+      const existing = channelTextBuffer.get(channelId) || '';
+      const parts = existing ? existing.split('\n').filter(Boolean) : [];
+      if (parts.length >= 5) return;
+      parts.push(snippet.slice(0, 300));
+      channelTextBuffer.set(channelId, parts.join('\n'));
+    }
+
+    function updateEnrichmentStatus() {
+      const enriched = enrichedChannelIds.size;
+      const accepted = acceptedChannelIds.size;
+      enrichedCountEl.textContent = enriched;
+      acceptedCountEl.textContent = accepted;
+      const label = `Enriched channels: ${enriched} / ${accepted || 0}`;
+      enrichmentStatusEl.setAttribute('aria-label', label);
+    }
+
+    async function enrichChannels() {
+      if (running) {
+        alert('Please wait until the scan is finished before enriching channels.');
+        return;
+      }
+      if (enriching) return;
+
+      if (!apiKeys.length) {
+        apiKeys = parseLines(apiKeysInput.value);
+      }
+      if (!apiKeys.length) {
+        alert('Please provide at least one API key before enriching.');
+        return;
+      }
+
+      const channelIdsToEnrich = Array.from(acceptedChannelIds).filter(id => !enrichedChannelIds.has(id));
+      if (!channelIdsToEnrich.length) {
+        setStatusMessage('All accepted channels are already enriched.');
+        return;
+      }
+
+      enriching = true;
+      const previousState = status.state;
+      status.state = 'Enriching';
+      updateStatus();
+
+      const limitedChannelIds = channelIdsToEnrich.slice(0, MAX_ENRICH_PER_RUN);
+      let processedIds = 0;
+      let stoppedEarly = false;
+
+      for (let i = 0; i < limitedChannelIds.length; i += 50) {
+        const batch = limitedChannelIds.slice(i, i + 50);
+        const data = await fetchChannelDetailsWithRetries(batch);
+        if (!data) {
+          stoppedEarly = true;
+          break;
+        }
+
+        const items = data.items || [];
+        for (const channel of items) {
+          const channelId = channel?.id;
+          if (!channelId) continue;
+          const name = channel?.snippet?.title || '';
+          const channelDescription = channel?.snippet?.description || '';
+          const language = channel?.snippet?.defaultLanguage || channel?.snippet?.defaultAudioLanguage || channel?.snippet?.country || '';
+          const subs = channel?.statistics?.subscriberCount || '';
+          const combinedText = [
+            channelDescription || '',
+            channelTextBuffer.get(channelId) || ''
+          ].join('\n');
+          const links = extractLinks(combinedText);
+          const email = extractEmail(combinedText);
+          const telegram = extractTelegram(combinedText, links, email);
+          const cryptoHits = channelHits.get(channelId) || '';
+
+          channelMeta.set(channelId, {
+            id: channelId,
+            url: `https://www.youtube.com/channel/${channelId}`,
+            name,
+            subs,
+            language,
+            email,
+            telegram,
+            links,
+            cryptoHits
+          });
+          enrichedChannelIds.add(channelId);
+        }
+
+        processedIds += batch.length;
+        updateEnrichmentStatus();
+        setStatusMessage(`Enriched ${Math.min(processedIds, limitedChannelIds.length)} of ${limitedChannelIds.length} channels…`);
+      }
+
+      if (status.state !== 'All keys exhausted') {
+        status.state = previousState;
+        setStatusMessage(stoppedEarly ? 'Enrichment stopped early due to errors.' : 'Enrichment completed.');
+      }
+      enriching = false;
+      updateStatus();
+    }
+
+    function extractLinks(text) {
+      const regex = /https?:\/\/[^\s"']+/gi;
+      const matches = text.match(regex) || [];
+      const unique = Array.from(new Set(matches.map(link => link.replace(/[\.,)]+$/, ''))));
+      return unique;
+    }
+
+    function extractEmail(text) {
+      const regex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+      const matches = text.match(regex) || [];
+      return matches[0] || '';
+    }
+
+    function extractTelegram(text, links, email) {
+      const telegramLink = links.find(link => /t\.me|telegram\.me/i.test(link));
+      if (telegramLink) return telegramLink;
+
+      const emailMatches = email ? [email] : [];
+      const handles = text.match(/@[a-zA-Z0-9_]{3,}/g) || [];
+      for (const handle of handles) {
+        const isEmailPart = emailMatches.some(em => em.includes(handle.slice(1)));
+        if (!isEmailPart) {
+          return handle;
+        }
+      }
+      return '';
+    }
+
+    async function fetchChannelDetailsWithRetries(idsBatch) {
+      const retries = 3;
+      let attempt = 0;
+      while (attempt < retries) {
+        try {
+          const result = await youtubeChannels(idsBatch);
+          if (result?.quota) {
+            moveToNextApiKey();
+            if (!getCurrentApiKey()) {
+              setStatusMessage('All API keys exhausted during enrichment.');
+              return null;
+            }
+            continue;
+          }
+          return result?.data || null;
+        } catch (err) {
+          attempt += 1;
+          setStatusMessage(`Network error, retrying (${attempt}/${retries})…`);
+          await new Promise(res => setTimeout(res, 1200));
+        }
+      }
+      setStatusMessage('Failed to fetch channel details after multiple attempts.');
+      return null;
+    }
+
+    async function youtubeChannels(idsBatch) {
+      const key = getCurrentApiKey();
+      if (!key) return { quota: true };
+
+      const url = new URL('https://www.googleapis.com/youtube/v3/channels');
+      url.search = new URLSearchParams({
+        part: 'snippet,statistics',
+        id: idsBatch.join(','),
+        key
+      }).toString();
+
+      const response = await fetch(url.toString());
+
+      if (response.ok) {
+        const data = await response.json();
+        return { data };
+      }
+
+      let errorJson = {};
+      try {
+        errorJson = await response.json();
+      } catch (e) {
+        // ignore parse errors
+      }
+
+      const reason = errorJson?.error?.errors?.[0]?.reason || '';
+      if ((response.status === 400 || response.status === 403) &&
+          (/quotaExceeded|dailyLimitExceeded|keyInvalid|forbidden/i).test(reason)) {
+        return { quota: true };
+      }
+
+      throw new Error(errorJson?.error?.message || `HTTP ${response.status}`);
+    }
+
+    function downloadCsv() {
+      if (!channelMeta.size) {
+        alert('No enriched channel data to download yet.');
+        return;
+      }
+
+      const header = ['channel_id','channel_url','channel_name','subscribers','language','email','telegram','crypto_hits','links'];
+      const escapeCsv = (value) => {
+        const str = String(value ?? '');
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+
+      const rows = [header.map(escapeCsv).join(',')];
+      for (const meta of channelMeta.values()) {
+        const row = [
+          meta.id,
+          meta.url,
+          meta.name,
+          meta.subs,
+          meta.language,
+          meta.email,
+          meta.telegram,
+          meta.cryptoHits ?? '',
+          (meta.links || []).join('|')
+        ].map(escapeCsv).join(',');
+        rows.push(row);
+      }
+
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'channels_enriched.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     }
   </script>
 </body>
