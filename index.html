@@ -261,6 +261,126 @@
       text-decoration: underline;
     }
 
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 12px 0 6px;
+      align-items: flex-end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 200px;
+      position: relative;
+    }
+
+    .filter-group .filter-toggle {
+      width: fit-content;
+    }
+
+    .range-inputs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .range-inputs input {
+      width: 120px;
+      background: var(--input);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      height: 42px;
+    }
+
+    .checkbox-group {
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .checkbox-group label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    .language-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      background: #0f0f19;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      min-width: 260px;
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      padding: 12px;
+    }
+
+    .language-dropdown-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .language-dropdown input[type="text"] {
+      width: 100%;
+      background: var(--input);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px;
+      height: 42px;
+    }
+
+    .language-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .language-actions .small {
+      padding: 8px 10px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+
+    .language-options {
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .language-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text);
+    }
+
+    .filter-toggle.active {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .empty-row {
       text-align: center;
       color: var(--muted);
@@ -314,7 +434,7 @@
 
     <section class="section" style="margin-top: 16px;">
       <div class="results-header">
-        <div><strong>Unique channels: </strong><span id="channelCount">0</span></div>
+        <div><strong>Unique channels: </strong><span id="channelCount">0</span> <span id="visibleCount" style="color: var(--muted);"></span></div>
         <div class="results-actions">
           <button class="ghost" id="enrichBtn">Enrich Channels</button>
           <button class="ghost" id="downloadCsvBtn">Download CSV</button>
@@ -322,6 +442,33 @@
         </div>
       </div>
       <div class="enrichment-status" id="enrichmentStatus">Enriched channels: <span id="enrichedCount">0</span> / <span id="acceptedCount">0</span></div>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>Languages</label>
+          <button class="ghost filter-toggle" id="languageToggle">Languages</button>
+          <div class="language-dropdown" id="languageDropdown" aria-label="Language filter" hidden>
+            <div class="language-dropdown-header">
+              <input type="text" id="languageSearch" placeholder="Search languages…" aria-label="Search languages">
+              <div class="language-actions">
+                <button type="button" class="neutral small" id="languageSelectAll">Select all</button>
+                <button type="button" class="neutral small" id="languageDeselectAll">Deselect all</button>
+              </div>
+            </div>
+            <div class="language-options" id="languageOptions"></div>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Subscribers range</label>
+          <div class="range-inputs">
+            <input type="number" id="minSubsFilter" placeholder="Min" min="0">
+            <input type="number" id="maxSubsFilter" placeholder="Max" min="0">
+          </div>
+        </div>
+        <div class="filter-group checkbox-group">
+          <label><input type="checkbox" id="onlyEmailFilter"> Only channels with email</label>
+          <label><input type="checkbox" id="uniqueEmailFilter"> Show unique emails only</label>
+        </div>
+      </div>
       <div class="table-wrapper" id="channel-table-container">
         <table class="enriched-table" id="channel-table" aria-label="Enriched channels table">
           <thead>
@@ -387,9 +534,31 @@
     const progressBar = document.getElementById('progressBar');
     const statusMessageEl = document.getElementById('statusMessage');
     const channelCountEl = document.getElementById('channelCount');
+    const visibleCountEl = document.getElementById('visibleCount');
     const enrichedCountEl = document.getElementById('enrichedCount');
     const acceptedCountEl = document.getElementById('acceptedCount');
     const enrichmentStatusEl = document.getElementById('enrichmentStatus');
+    const languageToggle = document.getElementById('languageToggle');
+    const languageDropdown = document.getElementById('languageDropdown');
+    const languageSearchInput = document.getElementById('languageSearch');
+    const languageOptionsEl = document.getElementById('languageOptions');
+    const languageSelectAllBtn = document.getElementById('languageSelectAll');
+    const languageDeselectAllBtn = document.getElementById('languageDeselectAll');
+    const minSubsInput = document.getElementById('minSubsFilter');
+    const maxSubsInput = document.getElementById('maxSubsFilter');
+    const onlyEmailCheckbox = document.getElementById('onlyEmailFilter');
+    const uniqueEmailCheckbox = document.getElementById('uniqueEmailFilter');
+
+    const selectedLanguages = new Set();
+    let languageDropdownOpen = false;
+    const filterState = {
+      languageSearch: '',
+      minSubs: '',
+      maxSubs: '',
+      onlyWithEmail: false,
+      uniqueEmails: false
+    };
+    let lastFilteredChannelIds = [];
 
     startBtn.addEventListener('click', startScan);
     stopBtn.addEventListener('click', stopScan);
@@ -397,9 +566,191 @@
     downloadBtn.addEventListener('click', downloadChannels);
     downloadCsvBtn.addEventListener('click', downloadCsv);
     enrichBtn.addEventListener('click', enrichChannels);
+    languageToggle.addEventListener('click', toggleLanguageDropdown);
+    languageSearchInput.addEventListener('input', handleLanguageSearch);
+    languageSelectAllBtn.addEventListener('click', selectAllVisibleLanguages);
+    languageDeselectAllBtn.addEventListener('click', deselectAllVisibleLanguages);
+    minSubsInput.addEventListener('input', handleSubscriberFilter);
+    maxSubsInput.addEventListener('input', handleSubscriberFilter);
+    onlyEmailCheckbox.addEventListener('change', handleEmailFilter);
+    uniqueEmailCheckbox.addEventListener('change', handleUniqueEmailFilter);
+    document.addEventListener('click', handleOutsideClick);
+
+    updateLanguageButtonLabel();
 
     function parseLines(value) {
       return value.split('\n').map(v => v.trim()).filter(Boolean);
+    }
+
+    function parseSubscriberCount(value) {
+      if (value === undefined || value === null || value === '') return null;
+      const num = Number(String(value).replace(/,/g, '').trim());
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function getAvailableLanguages() {
+      const langs = [];
+      for (const meta of channelMeta.values()) {
+        const lang = (meta.language || '').trim();
+        if (lang) langs.push(lang);
+      }
+      return Array.from(new Set(langs)).sort((a, b) => a.localeCompare(b));
+    }
+
+    function updateLanguageButtonLabel() {
+      const count = selectedLanguages.size;
+      languageToggle.textContent = count ? `Languages (${count})` : 'Languages';
+      languageToggle.classList.toggle('active', languageDropdownOpen || count > 0);
+    }
+
+    function renderLanguageOptions() {
+      const searchTerm = filterState.languageSearch.toLowerCase();
+      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+
+      languageOptionsEl.innerHTML = '';
+
+      if (!languages.length) {
+        const empty = document.createElement('div');
+        empty.textContent = 'No languages available';
+        empty.style.color = 'var(--muted)';
+        empty.style.fontSize = '13px';
+        languageOptionsEl.appendChild(empty);
+        return;
+      }
+
+      for (const lang of languages) {
+        const label = document.createElement('label');
+        label.className = 'language-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedLanguages.has(lang);
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) {
+            selectedLanguages.add(lang);
+          } else {
+            selectedLanguages.delete(lang);
+          }
+          updateLanguageButtonLabel();
+          renderChannelTable();
+        });
+        label.appendChild(checkbox);
+        const span = document.createElement('span');
+        span.textContent = lang;
+        label.appendChild(span);
+        languageOptionsEl.appendChild(label);
+      }
+    }
+
+    function setLanguageDropdown(open) {
+      languageDropdownOpen = open;
+      languageDropdown.hidden = !open;
+      languageToggle.classList.toggle('active', open || selectedLanguages.size > 0);
+      if (open) {
+        renderLanguageOptions();
+      }
+    }
+
+    function toggleLanguageDropdown(event) {
+      event.stopPropagation();
+      setLanguageDropdown(!languageDropdownOpen);
+    }
+
+    function handleOutsideClick(event) {
+      if (!languageDropdownOpen) return;
+      if (!languageDropdown.contains(event.target) && event.target !== languageToggle) {
+        setLanguageDropdown(false);
+      }
+    }
+
+    function handleLanguageSearch(event) {
+      filterState.languageSearch = event.target.value || '';
+      renderLanguageOptions();
+    }
+
+    function selectAllVisibleLanguages() {
+      const searchTerm = filterState.languageSearch.toLowerCase();
+      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+      languages.forEach(lang => selectedLanguages.add(lang));
+      updateLanguageButtonLabel();
+      renderLanguageOptions();
+      renderChannelTable();
+    }
+
+    function deselectAllVisibleLanguages() {
+      const searchTerm = filterState.languageSearch.toLowerCase();
+      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+      languages.forEach(lang => selectedLanguages.delete(lang));
+      updateLanguageButtonLabel();
+      renderLanguageOptions();
+      renderChannelTable();
+    }
+
+    function handleSubscriberFilter() {
+      filterState.minSubs = minSubsInput.value;
+      filterState.maxSubs = maxSubsInput.value;
+      renderChannelTable();
+    }
+
+    function handleEmailFilter(event) {
+      filterState.onlyWithEmail = event.target.checked;
+      renderChannelTable();
+    }
+
+    function handleUniqueEmailFilter(event) {
+      filterState.uniqueEmails = event.target.checked;
+      renderChannelTable();
+    }
+
+    function getFilteredChannelIds() {
+      const baseIds = Array.from(acceptedChannelIds || []);
+      const languageActive = selectedLanguages.size > 0;
+      const minVal = filterState.minSubs !== '' ? parseSubscriberCount(filterState.minSubs) : null;
+      const maxVal = filterState.maxSubs !== '' ? parseSubscriberCount(filterState.maxSubs) : null;
+
+      const filtered = [];
+
+      for (const id of baseIds) {
+        const meta = channelMeta.get(id) || {};
+        const language = (meta.language || '').trim();
+        if (languageActive && (!language || !selectedLanguages.has(language))) continue;
+
+        const subsNum = parseSubscriberCount(meta.subs);
+        if (minVal !== null) {
+          if (subsNum === null || subsNum < minVal) continue;
+        }
+        if (maxVal !== null) {
+          if (subsNum === null || subsNum > maxVal) continue;
+        }
+
+        if (filterState.onlyWithEmail) {
+          const email = (meta.email || '').trim();
+          if (!email) continue;
+        }
+
+        filtered.push({ id, subsNum });
+      }
+
+      if (filterState.uniqueEmails) {
+        const emailMap = new Map();
+        for (const entry of filtered) {
+          const meta = channelMeta.get(entry.id) || {};
+          const email = (meta.email || '').trim();
+          if (!email) continue;
+          const existing = emailMap.get(email);
+          if (!existing || (entry.subsNum ?? -1) > (existing.subsNum ?? -1)) {
+            emailMap.set(email, entry);
+          }
+        }
+        return Array.from(emailMap.values()).map(item => item.id);
+      }
+
+      return filtered.map(item => item.id);
+    }
+
+    function updateVisibleCount(count) {
+      if (!visibleCountEl) return;
+      const suffix = typeof count === 'number' ? `• Visible: ${count}` : '';
+      visibleCountEl.textContent = suffix ? suffix : '';
     }
 
     function isCryptoVideo(title, description) {
@@ -466,11 +817,16 @@
     }
 
     function downloadChannels() {
-      if (!knownChannels.size) {
+      const filteredIds = getFilteredChannelIds();
+      if (!filteredIds.length) {
         alert('No channels to download yet.');
         return;
       }
-      const blob = new Blob([Array.from(knownChannels).join('\n')], { type: 'text/plain' });
+      const urls = filteredIds.map(id => {
+        const meta = channelMeta.get(id) || {};
+        return meta.url || `https://www.youtube.com/channel/${id}`;
+      });
+      const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -739,7 +1095,13 @@
       if (!tbody) return;
       tbody.innerHTML = '';
 
-      const channelIds = Array.from(acceptedChannelIds || []);
+      if (languageDropdownOpen) {
+        renderLanguageOptions();
+      }
+
+      const channelIds = getFilteredChannelIds();
+      lastFilteredChannelIds = channelIds;
+      updateVisibleCount(channelIds.length);
 
       if (!channelIds.length) {
         const row = document.createElement('tr');
@@ -968,7 +1330,8 @@
     }
 
     function downloadCsv() {
-      if (!channelMeta.size) {
+      const filteredIds = getFilteredChannelIds();
+      if (!filteredIds.length) {
         alert('No enriched channel data to download yet.');
         return;
       }
@@ -980,16 +1343,17 @@
       };
 
       const rows = [header.map(escapeCsv).join(',')];
-      for (const meta of channelMeta.values()) {
+      for (const id of filteredIds) {
+        const meta = channelMeta.get(id) || {};
         const row = [
-          meta.id,
-          meta.url,
-          meta.name,
-          meta.subs,
-          meta.language,
-          meta.email,
-          meta.telegram,
-          meta.cryptoHits ?? '',
+          meta.id || id,
+          meta.url || `https://www.youtube.com/channel/${id}`,
+          meta.name || '',
+          meta.subs || '',
+          meta.language || '',
+          meta.email || '',
+          meta.telegram || '',
+          (meta.cryptoHits ?? channelHits.get(id) ?? ''),
           (meta.links || []).join('|')
         ].map(escapeCsv).join(',');
         rows.push(row);
