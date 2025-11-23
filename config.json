@@ -1,0 +1,21 @@
+{
+  "api_keys": [
+    "YOUR_API_KEY_1",
+    "YOUR_API_KEY_2"
+  ],
+  "keywords": [
+    "bitcoin",
+    "btc",
+    "crypto trading",
+    "cryptocurrency",
+    "altcoin",
+    "futures trading",
+    "leverage trading",
+    "defi",
+    "solana",
+    "memecoin"
+  ],
+  "max_results_per_keyword": 2000,
+  "state_file": "state.json",
+  "output_file": "channels.txt"
+}
