@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crypto YouTube Channel Harvester</title>
+  <style>
+    :root {
+      --bg: #050509;
+      --card: #151521;
+      --input: #1e1e2e;
+      --border: #29293b;
+      --text: #e5e5f0;
+      --muted: #9ca3af;
+      --accent: #3b82f6;
+      --accent-2: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 920px;
+      background: var(--card);
+      padding: 28px;
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.3px;
+    }
+
+    header p {
+      margin: 6px 0 18px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .section {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    textarea, input[type="number"] {
+      width: 100%;
+      background: var(--input);
+      border: 1px solid var(--border);
+      color: #f5f5ff;
+      border-radius: 10px;
+      padding: 12px;
+      resize: vertical;
+      min-height: 120px;
+      font-size: 14px;
+    }
+
+    input[type="number"] {
+      min-height: unset;
+      height: 46px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform 0.05s ease, filter 0.15s ease;
+      color: #f8fafc;
+    }
+
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+
+    .primary { background: var(--accent); }
+    .danger { background: var(--danger); }
+    .neutral { background: #374151; }
+    .ghost {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .stat {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.4px;
+    }
+
+    .stat .value {
+      font-weight: 600;
+      margin-top: 6px;
+      font-size: 16px;
+    }
+
+    .progress {
+      margin-top: 14px;
+      background: #26263a;
+      border-radius: 999px;
+      height: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      transition: width 0.2s ease;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .results {
+      max-height: 320px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .channel {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 14px;
+      word-break: break-all;
+    }
+
+    .channel:last-child { border-bottom: none; }
+
+    .channel a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .channel a:hover { text-decoration: underline; }
+
+    .status-message {
+      margin-top: 10px;
+      color: var(--muted);
+      min-height: 18px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Crypto YouTube Channel Harvester</h1>
+      <p>Local-only, runs in your browser</p>
+    </header>
+
+    <section class="section">
+      <div class="grid">
+        <div>
+          <label for="apiKeys">API Keys</label>
+          <textarea id="apiKeys" placeholder="Paste one YouTube API key per line…"></textarea>
+        </div>
+        <div>
+          <label for="keywords">Keywords</label>
+          <textarea id="keywords" placeholder="Paste one search keyword per line… (e.g. bitcoin, crypto trading, altcoin, memecoin, …)"></textarea>
+        </div>
+        <div>
+          <label for="maxResults">Max results per keyword</label>
+          <input type="number" id="maxResults" min="50" step="50" value="1000">
+          <div class="controls">
+            <button class="primary" id="startBtn">Start Scan</button>
+            <button class="danger" id="stopBtn">Stop Scan</button>
+            <button class="neutral" id="clearBtn">Clear Results</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" style="margin-top: 16px;">
+      <div class="status-grid">
+        <div class="stat"><div class="label">State</div><div class="value" id="state">Idle</div></div>
+        <div class="stat"><div class="label">Current keyword</div><div class="value" id="currentKeyword">-</div></div>
+        <div class="stat"><div class="label">Page</div><div class="value" id="page">0</div></div>
+        <div class="stat"><div class="label">Videos processed</div><div class="value" id="videosProcessed">0</div></div>
+        <div class="stat"><div class="label">Unique channels</div><div class="value" id="uniqueChannels">0</div></div>
+        <div class="stat"><div class="label">API key</div><div class="value" id="apiKeyIndex">0 / 0</div></div>
+      </div>
+      <div class="progress" aria-label="Progress">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="status-message" id="statusMessage"></div>
+    </section>
+
+    <section class="section" style="margin-top: 16px;">
+      <div class="results-header">
+        <div><strong>Unique channels: </strong><span id="channelCount">0</span></div>
+        <button class="ghost" id="downloadBtn">Download .txt</button>
+      </div>
+      <div class="results" id="results"></div>
+    </section>
+  </div>
+
+  <script>
+    let apiKeys = [];
+    let currentKeyIndex = 0;
+    let keywords = [];
+    let maxResultsPerKeyword = 1000;
+    let running = false;
+    let knownChannels = new Set();
+    let totalVideosProcessed = 0;
+    let videosForCurrentKeyword = 0;
+    let status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
+
+    const apiKeysInput = document.getElementById('apiKeys');
+    const keywordsInput = document.getElementById('keywords');
+    const maxResultsInput = document.getElementById('maxResults');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const stateEl = document.getElementById('state');
+    const keywordEl = document.getElementById('currentKeyword');
+    const pageEl = document.getElementById('page');
+    const videosProcessedEl = document.getElementById('videosProcessed');
+    const uniqueChannelsEl = document.getElementById('uniqueChannels');
+    const apiKeyIndexEl = document.getElementById('apiKeyIndex');
+    const progressBar = document.getElementById('progressBar');
+    const statusMessageEl = document.getElementById('statusMessage');
+    const resultsEl = document.getElementById('results');
+    const channelCountEl = document.getElementById('channelCount');
+
+    startBtn.addEventListener('click', startScan);
+    stopBtn.addEventListener('click', stopScan);
+    clearBtn.addEventListener('click', clearResults);
+    downloadBtn.addEventListener('click', downloadChannels);
+
+    function parseLines(value) {
+      return value.split('\n').map(v => v.trim()).filter(Boolean);
+    }
+
+    function getCurrentApiKey() {
+      return apiKeys[currentKeyIndex] || null;
+    }
+
+    function moveToNextApiKey() {
+      currentKeyIndex += 1;
+      if (currentKeyIndex >= apiKeys.length) {
+        status.state = 'All keys exhausted';
+        running = false;
+        setStatusMessage('All API keys exhausted for today. Stopping.');
+      } else {
+        setStatusMessage(`Switching to API key ${currentKeyIndex + 1} of ${apiKeys.length}`);
+      }
+      updateStatus();
+    }
+
+    function setStatusMessage(msg) {
+      statusMessageEl.textContent = msg || '';
+    }
+
+    function updateStatus() {
+      stateEl.textContent = status.state;
+      keywordEl.textContent = status.keyword || '-';
+      pageEl.textContent = status.page;
+      videosProcessedEl.textContent = totalVideosProcessed;
+      uniqueChannelsEl.textContent = knownChannels.size;
+      apiKeyIndexEl.textContent = apiKeys.length ? `${currentKeyIndex + 1} / ${apiKeys.length}` : '0 / 0';
+      channelCountEl.textContent = knownChannels.size;
+    }
+
+    function updateProgress() {
+      const pct = Math.min(100, (videosForCurrentKeyword / maxResultsPerKeyword) * 100);
+      progressBar.style.width = `${pct}%`;
+    }
+
+    function appendChannel(url) {
+      const div = document.createElement('div');
+      div.className = 'channel';
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = url;
+      div.appendChild(a);
+      resultsEl.appendChild(div);
+    }
+
+    function stopScan() {
+      running = false;
+      status.state = 'Stopped by user';
+      setStatusMessage('Scan stopped.');
+      updateStatus();
+    }
+
+    function clearResults() {
+      knownChannels.clear();
+      resultsEl.innerHTML = '';
+      totalVideosProcessed = 0;
+      videosForCurrentKeyword = 0;
+      status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
+      progressBar.style.width = '0%';
+      setStatusMessage('');
+      updateStatus();
+    }
+
+    function downloadChannels() {
+      if (!knownChannels.size) {
+        alert('No channels to download yet.');
+        return;
+      }
+      const blob = new Blob([Array.from(knownChannels).join('\n')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'channels.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function startScan() {
+      if (running) return;
+
+      apiKeys = parseLines(apiKeysInput.value);
+      keywords = parseLines(keywordsInput.value);
+      maxResultsPerKeyword = parseInt(maxResultsInput.value, 10) || 1000;
+
+      if (!apiKeys.length) {
+        alert('Please provide at least one API key.');
+        return;
+      }
+
+      if (!keywords.length) {
+        alert('Please provide at least one keyword.');
+        return;
+      }
+
+      running = true;
+      currentKeyIndex = 0;
+      totalVideosProcessed = 0;
+      status = { state: 'Running', keyword: '', page: 0, keyIndex: 0 };
+      setStatusMessage('Starting scan…');
+      updateStatus();
+      progressBar.style.width = '0%';
+
+      for (let i = 0; i < keywords.length && running; i++) {
+        const keyword = keywords[i];
+        status.keyword = keyword;
+        status.page = 0;
+        videosForCurrentKeyword = 0;
+        updateStatus();
+
+        let pageToken = '';
+        while (running && videosForCurrentKeyword < maxResultsPerKeyword) {
+          const data = await fetchWithRetries(keyword, pageToken);
+          if (!running || !data) break;
+
+          status.page += 1;
+          const items = data.items || [];
+          for (const item of items) {
+            if (videosForCurrentKeyword >= maxResultsPerKeyword || !running) break;
+            videosForCurrentKeyword += 1;
+            totalVideosProcessed += 1;
+            const channelId = item?.snippet?.channelId;
+            if (channelId) {
+              const channelUrl = `https://www.youtube.com/channel/${channelId}`;
+              if (!knownChannels.has(channelUrl)) {
+                knownChannels.add(channelUrl);
+                appendChannel(channelUrl);
+              }
+            }
+          }
+
+          updateProgress();
+          updateStatus();
+
+          if (!data.nextPageToken || videosForCurrentKeyword >= maxResultsPerKeyword) {
+            break;
+          }
+          pageToken = data.nextPageToken;
+        }
+      }
+
+      if (running) {
+        status.state = 'Done';
+        setStatusMessage('Scan finished.');
+      }
+      running = false;
+      updateStatus();
+    }
+
+    async function fetchWithRetries(keyword, pageToken) {
+      const retries = 3;
+      let attempt = 0;
+      while (attempt < retries && running) {
+        try {
+          const result = await youtubeSearch(keyword, pageToken);
+          if (result?.quota) {
+            moveToNextApiKey();
+            if (!running) return null;
+            continue;
+          }
+          return result?.data || null;
+        } catch (err) {
+          attempt += 1;
+          setStatusMessage(`Network error, retrying (${attempt}/${retries})…`);
+          await new Promise(res => setTimeout(res, 1200));
+        }
+      }
+      if (running) {
+        running = false;
+        status.state = 'Network error';
+        setStatusMessage('Failed to fetch data after multiple attempts.');
+        updateStatus();
+      }
+      return null;
+    }
+
+    async function youtubeSearch(keyword, pageToken) {
+      const key = getCurrentApiKey();
+      if (!key) return { quota: true };
+
+      const url = new URL('https://www.googleapis.com/youtube/v3/search');
+      url.search = new URLSearchParams({
+        part: 'snippet',
+        type: 'video',
+        maxResults: '50',
+        q: keyword,
+        key,
+        pageToken: pageToken || ''
+      }).toString();
+
+      const response = await fetch(url.toString());
+
+      if (response.ok) {
+        const data = await response.json();
+        return { data };
+      }
+
+      let errorJson = {};
+      try {
+        errorJson = await response.json();
+      } catch (e) {
+        // ignore parse errors
+      }
+
+      const reason = errorJson?.error?.errors?.[0]?.reason || '';
+      if ((response.status === 400 || response.status === 403) &&
+          (/quotaExceeded|dailyLimitExceeded|keyInvalid|forbidden/i).test(reason)) {
+        return { quota: true };
+      }
+
+      throw new Error(errorJson?.error?.message || `HTTP ${response.status}`);
+    }
+  </script>
+</body>
+</html>
