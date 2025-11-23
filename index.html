@@ -24,21 +24,19 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg);
       color: var(--text);
-      display: flex;
       min-height: 100vh;
-      align-items: center;
-      justify-content: center;
       padding: 24px;
     }
 
     .app {
-      width: 100%;
-      max-width: 920px;
+      width: 95vw;
+      max-width: 1500px;
       background: var(--card);
-      padding: 28px;
+      padding: 22px 24px;
       border-radius: 18px;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255, 255, 255, 0.03);
+      margin: 32px auto;
     }
 
     header h1 {
@@ -175,31 +173,6 @@
       justify-content: flex-end;
     }
 
-    .results {
-      max-height: 320px;
-      overflow: auto;
-      padding: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      background: rgba(0, 0, 0, 0.2);
-    }
-
-    .channel {
-      padding: 8px 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      font-size: 14px;
-      word-break: break-all;
-    }
-
-    .channel:last-child { border-bottom: none; }
-
-    .channel a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    .channel a:hover { text-decoration: underline; }
-
     .status-message {
       margin-top: 10px;
       color: var(--muted);
@@ -216,19 +189,22 @@
       align-items: center;
     }
 
-    .enriched-table-container {
+    .table-wrapper {
       margin-top: 12px;
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 12px;
       background: rgba(0, 0, 0, 0.2);
-      max-height: 360px;
+      max-height: 520px;
       overflow-y: auto;
+      overflow-x: auto;
+      width: 100%;
     }
 
     table.enriched-table {
       width: 100%;
       border-collapse: collapse;
       color: var(--text);
+      min-width: 900px;
     }
 
     table.enriched-table thead {
@@ -240,13 +216,13 @@
 
     table.enriched-table th {
       text-align: left;
-      padding: 10px;
-      font-weight: 600;
+      padding: 12px;
+      font-weight: 700;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     table.enriched-table td {
-      padding: 10px;
+      padding: 12px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       vertical-align: top;
       font-size: 14px;
@@ -263,37 +239,46 @@
 
     .enriched-table a:hover { text-decoration: underline; }
 
+    .links-cell { position: relative; }
+
     .links-toggle {
       background: #2b2b3d;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       padding: 6px 10px;
       border-radius: 8px;
       font-size: 13px;
       cursor: pointer;
+      color: #e5e7eb;
+      white-space: nowrap;
     }
 
     .links-popup {
-      margin-top: 8px;
-      background: #1a1a26;
+      position: absolute;
+      left: 0;
+      top: calc(100% + 6px);
+      background: #111827;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 10px;
       padding: 8px;
-      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
       max-height: 200px;
       overflow-y: auto;
+      white-space: normal;
+      word-break: break-all;
+      z-index: 20;
+      min-width: 220px;
     }
 
-    .links-popup.hidden { display: none; }
+    .hidden { display: none; }
 
-    .links-popup a {
+    .link-entry {
       display: block;
       color: var(--accent-2);
-      word-break: break-all;
       margin-bottom: 6px;
       font-size: 13px;
     }
 
-    .links-popup a:last-child { margin-bottom: 0; }
+    .link-entry:last-child { margin-bottom: 0; }
 
     .empty-row {
       text-align: center;
@@ -356,8 +341,7 @@
         </div>
       </div>
       <div class="enrichment-status" id="enrichmentStatus">Enriched channels: <span id="enrichedCount">0</span> / <span id="acceptedCount">0</span></div>
-      <div class="results" id="results"></div>
-      <div class="enriched-table-container">
+      <div class="table-wrapper">
         <table class="enriched-table" aria-label="Enriched channels table">
           <thead>
             <tr>
@@ -371,7 +355,7 @@
               <th>Links</th>
             </tr>
           </thead>
-          <tbody id="enrichedTbody"></tbody>
+          <tbody id="channelTbody"></tbody>
         </table>
       </div>
     </section>
@@ -421,8 +405,7 @@
     const apiKeyIndexEl = document.getElementById('apiKeyIndex');
     const progressBar = document.getElementById('progressBar');
     const statusMessageEl = document.getElementById('statusMessage');
-    const resultsEl = document.getElementById('results');
-    const enrichedTbody = document.getElementById('enrichedTbody');
+    const channelTbody = document.getElementById('channelTbody');
     const channelCountEl = document.getElementById('channelCount');
     const enrichedCountEl = document.getElementById('enrichedCount');
     const acceptedCountEl = document.getElementById('acceptedCount');
@@ -479,18 +462,6 @@
       progressBar.style.width = `${pct}%`;
     }
 
-    function appendChannel(url) {
-      const div = document.createElement('div');
-      div.className = 'channel';
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.textContent = url;
-      div.appendChild(a);
-      resultsEl.appendChild(div);
-    }
-
     function stopScan() {
       running = false;
       status.state = 'Stopped by user';
@@ -505,14 +476,13 @@
       channelMeta.clear();
       enrichedChannelIds.clear();
       channelTextBuffer.clear();
-      resultsEl.innerHTML = '';
       totalVideosProcessed = 0;
       videosForCurrentKeyword = 0;
       status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
       progressBar.style.width = '0%';
       setStatusMessage('');
       updateStatus();
-      renderEnrichedTable();
+      renderChannelTable();
     }
 
     function downloadChannels() {
@@ -560,6 +530,7 @@
       setStatusMessage('Starting scan…');
       updateStatus();
       progressBar.style.width = '0%';
+      renderChannelTable();
 
       for (let i = 0; i < keywords.length && running; i++) {
         const keyword = keywords[i];
@@ -597,8 +568,8 @@
               const channelUrl = `https://www.youtube.com/channel/${channelId}`;
               if (!knownChannels.has(channelUrl)) {
                 knownChannels.add(channelUrl);
-                appendChannel(channelUrl);
               }
+              renderChannelTable();
             }
           }
 
@@ -775,7 +746,7 @@
         processedIds += batch.length;
         updateEnrichmentStatus();
         setStatusMessage(`Enriched ${Math.min(processedIds, limitedChannelIds.length)} of ${limitedChannelIds.length} channels…`);
-        renderEnrichedTable();
+        renderChannelTable();
       }
 
       if (status.state !== 'All keys exhausted') {
@@ -784,52 +755,54 @@
       }
       enriching = false;
       updateStatus();
-      renderEnrichedTable();
+      renderChannelTable();
     }
 
-    function renderEnrichedTable() {
-      if (!enrichedTbody) return;
-      enrichedTbody.innerHTML = '';
+    function renderChannelTable() {
+      if (!channelTbody) return;
+      channelTbody.innerHTML = '';
 
-      if (!channelMeta.size) {
+      if (!acceptedChannelIds.size) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
         cell.colSpan = 8;
         cell.className = 'empty-row';
-        cell.textContent = 'No enriched channels yet.';
+        cell.textContent = 'No channels yet.';
         row.appendChild(cell);
-        enrichedTbody.appendChild(row);
+        channelTbody.appendChild(row);
         return;
       }
 
-      for (const [, meta] of channelMeta.entries()) {
+      const channelIds = Array.from(acceptedChannelIds);
+
+      for (const channelId of channelIds) {
+        const meta = channelMeta.get(channelId);
         const tr = document.createElement('tr');
 
         const nameCell = document.createElement('td');
-        nameCell.textContent = meta.name || '';
+        nameCell.textContent = meta?.name || '';
         tr.appendChild(nameCell);
 
         const urlCell = document.createElement('td');
-        if (meta.url) {
-          const link = document.createElement('a');
-          link.href = meta.url;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = meta.url;
-          urlCell.appendChild(link);
-        }
+        const knownUrl = meta?.url || Array.from(knownChannels).find(url => url.includes(channelId)) || `https://www.youtube.com/channel/${channelId}`;
+        const link = document.createElement('a');
+        link.href = knownUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = knownUrl;
+        urlCell.appendChild(link);
         tr.appendChild(urlCell);
 
         const subsCell = document.createElement('td');
-        subsCell.textContent = meta.subs ?? '';
+        subsCell.textContent = meta?.subs ?? '';
         tr.appendChild(subsCell);
 
         const langCell = document.createElement('td');
-        langCell.textContent = meta.language || '';
+        langCell.textContent = meta?.language || '';
         tr.appendChild(langCell);
 
         const emailCell = document.createElement('td');
-        if (meta.email) {
+        if (meta?.email) {
           const emailLink = document.createElement('a');
           emailLink.href = `mailto:${meta.email}`;
           emailLink.textContent = meta.email;
@@ -838,7 +811,7 @@
         tr.appendChild(emailCell);
 
         const telegramCell = document.createElement('td');
-        if (meta.telegram) {
+        if (meta?.telegram) {
           if (meta.telegram.startsWith('http')) {
             const tgLink = document.createElement('a');
             tgLink.href = meta.telegram;
@@ -853,11 +826,14 @@
         tr.appendChild(telegramCell);
 
         const hitsCell = document.createElement('td');
-        hitsCell.textContent = meta.cryptoHits ?? '';
+        const hitsValue = channelHits.has(channelId) ? channelHits.get(channelId) : (meta?.cryptoHits ?? '');
+        hitsCell.textContent = hitsValue ?? '';
         tr.appendChild(hitsCell);
 
         const linksCell = document.createElement('td');
-        const linkCount = meta.links ? meta.links.length : 0;
+        linksCell.className = 'links-cell';
+        const links = meta && Array.isArray(meta.links) ? meta.links : [];
+        const linkCount = links.length;
         if (linkCount > 0) {
           const btn = document.createElement('button');
           btn.className = 'links-toggle';
@@ -866,17 +842,22 @@
 
           const popup = document.createElement('div');
           popup.className = 'links-popup hidden';
-          for (const link of meta.links) {
+          for (const linkUrl of links) {
             const linkEl = document.createElement('a');
-            linkEl.href = link;
+            linkEl.href = linkUrl;
             linkEl.target = '_blank';
             linkEl.rel = 'noopener noreferrer';
-            linkEl.textContent = link;
+            linkEl.textContent = linkUrl;
+            linkEl.className = 'link-entry';
             popup.appendChild(linkEl);
           }
 
-          btn.addEventListener('click', () => {
-            popup.classList.toggle('hidden');
+          btn.addEventListener('click', (event) => {
+            const cell = event.currentTarget.closest('.links-cell');
+            const popupEl = cell?.querySelector('.links-popup');
+            if (popupEl) {
+              popupEl.classList.toggle('hidden');
+            }
           });
 
           linksCell.appendChild(btn);
@@ -886,7 +867,7 @@
         }
         tr.appendChild(linksCell);
 
-        enrichedTbody.appendChild(tr);
+        channelTbody.appendChild(tr);
       }
     }
 
@@ -1016,7 +997,7 @@
       URL.revokeObjectURL(url);
     }
 
-    renderEnrichedTable();
+    renderChannelTable();
   </script>
 </body>
 </html>
