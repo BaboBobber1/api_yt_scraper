@@ -588,6 +588,7 @@
       }
       running = false;
       updateStatus();
+      renderChannelTable();
     }
 
     async function fetchWithRetries(keyword, pageToken) {
@@ -762,7 +763,9 @@
       if (!tbody) return;
       tbody.innerHTML = '';
 
-      if (!acceptedChannelIds.size) {
+      const channelIds = Array.from(acceptedChannelIds || []);
+
+      if (!channelIds.length) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
         cell.colSpan = 8;
@@ -773,8 +776,6 @@
         return;
       }
 
-      const channelIds = Array.from(acceptedChannelIds);
-
       for (const channelId of channelIds) {
         const meta = channelMeta.get(channelId);
         const tr = document.createElement('tr');
@@ -784,7 +785,7 @@
         tr.appendChild(nameCell);
 
         const urlCell = document.createElement('td');
-        const knownUrl = meta?.url || Array.from(knownChannels).find(url => url.includes(channelId)) || `https://www.youtube.com/channel/${channelId}`;
+        const knownUrl = meta?.url || `https://www.youtube.com/channel/${channelId}`;
         const link = document.createElement('a');
         link.href = knownUrl;
         link.target = '_blank';
