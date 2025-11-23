@@ -460,13 +460,13 @@
         <div class="filter-group">
           <label>Subscribers range</label>
           <div class="range-inputs">
-            <input type="number" id="minSubsFilter" placeholder="Min" min="0">
-            <input type="number" id="maxSubsFilter" placeholder="Max" min="0">
+            <input type="text" id="minSubsFilter" placeholder="Min" inputmode="numeric" pattern="[0-9]*">
+            <input type="text" id="maxSubsFilter" placeholder="Max" inputmode="numeric" pattern="[0-9]*">
           </div>
         </div>
         <div class="filter-group checkbox-group">
-          <label><input type="checkbox" id="onlyEmailFilter"> Only channels with email</label>
           <label><input type="checkbox" id="uniqueEmailFilter"> Show unique emails only</label>
+          <label><input type="checkbox" id="telegramOnlyFilter"> Telegram only</label>
         </div>
       </div>
       <div class="table-wrapper" id="channel-table-container">
@@ -546,17 +546,38 @@
     const languageDeselectAllBtn = document.getElementById('languageDeselectAll');
     const minSubsInput = document.getElementById('minSubsFilter');
     const maxSubsInput = document.getElementById('maxSubsFilter');
-    const onlyEmailCheckbox = document.getElementById('onlyEmailFilter');
     const uniqueEmailCheckbox = document.getElementById('uniqueEmailFilter');
+    const telegramOnlyCheckbox = document.getElementById('telegramOnlyFilter');
 
     const selectedLanguages = new Set();
+    const LANGUAGE_LABELS = {
+      AE: 'Arabic',
+      AU: 'English',
+      BR: 'Portuguese',
+      CA: 'English',
+      CH: 'Chinese',
+      CN: 'Chinese',
+      DE: 'German',
+      ES: 'Spanish',
+      FR: 'French',
+      HK: 'Chinese',
+      IN: 'Hindi',
+      IT: 'Italian',
+      JP: 'Japanese',
+      KR: 'Korean',
+      MX: 'Spanish',
+      RU: 'Russian',
+      TR: 'Turkish',
+      UK: 'English',
+      US: 'English'
+    };
     let languageDropdownOpen = false;
     const filterState = {
       languageSearch: '',
       minSubs: '',
       maxSubs: '',
-      onlyWithEmail: false,
-      uniqueEmails: false
+      uniqueEmails: false,
+      telegramOnly: false
     };
     let lastFilteredChannelIds = [];
 
@@ -570,10 +591,12 @@
     languageSearchInput.addEventListener('input', handleLanguageSearch);
     languageSelectAllBtn.addEventListener('click', selectAllVisibleLanguages);
     languageDeselectAllBtn.addEventListener('click', deselectAllVisibleLanguages);
-    minSubsInput.addEventListener('input', handleSubscriberFilter);
-    maxSubsInput.addEventListener('input', handleSubscriberFilter);
-    onlyEmailCheckbox.addEventListener('change', handleEmailFilter);
+    minSubsInput.addEventListener('input', handleSubscriberInput);
+    maxSubsInput.addEventListener('input', handleSubscriberInput);
+    minSubsInput.addEventListener('blur', formatSubscriberInput);
+    maxSubsInput.addEventListener('blur', formatSubscriberInput);
     uniqueEmailCheckbox.addEventListener('change', handleUniqueEmailFilter);
+    telegramOnlyCheckbox.addEventListener('change', handleTelegramFilter);
     document.addEventListener('click', handleOutsideClick);
 
     updateLanguageButtonLabel();
@@ -584,8 +607,15 @@
 
     function parseSubscriberCount(value) {
       if (value === undefined || value === null || value === '') return null;
-      const num = Number(String(value).replace(/,/g, '').trim());
+      const cleaned = String(value).replace(/[.,\s]/g, '').trim();
+      const num = Number(cleaned);
       return Number.isFinite(num) ? num : null;
+    }
+
+    function formatWithThousandDots(value) {
+      const digits = String(value || '').replace(/\D/g, '');
+      if (!digits) return '';
+      return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     }
 
     function getAvailableLanguages() {
@@ -603,9 +633,17 @@
       languageToggle.classList.toggle('active', languageDropdownOpen || count > 0);
     }
 
+    function getLanguageLabel(lang) {
+      const name = LANGUAGE_LABELS[lang];
+      return name ? `${lang} (${name})` : lang;
+    }
+
     function renderLanguageOptions() {
       const searchTerm = filterState.languageSearch.toLowerCase();
-      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+      const languages = getAvailableLanguages().filter(lang => {
+        const label = getLanguageLabel(lang).toLowerCase();
+        return lang.toLowerCase().includes(searchTerm) || label.includes(searchTerm);
+      });
 
       languageOptionsEl.innerHTML = '';
 
@@ -635,7 +673,7 @@
         });
         label.appendChild(checkbox);
         const span = document.createElement('span');
-        span.textContent = lang;
+        span.textContent = getLanguageLabel(lang);
         label.appendChild(span);
         languageOptionsEl.appendChild(label);
       }
@@ -669,7 +707,10 @@
 
     function selectAllVisibleLanguages() {
       const searchTerm = filterState.languageSearch.toLowerCase();
-      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+      const languages = getAvailableLanguages().filter(lang => {
+        const label = getLanguageLabel(lang).toLowerCase();
+        return lang.toLowerCase().includes(searchTerm) || label.includes(searchTerm);
+      });
       languages.forEach(lang => selectedLanguages.add(lang));
       updateLanguageButtonLabel();
       renderLanguageOptions();
@@ -678,26 +719,48 @@
 
     function deselectAllVisibleLanguages() {
       const searchTerm = filterState.languageSearch.toLowerCase();
-      const languages = getAvailableLanguages().filter(lang => lang.toLowerCase().includes(searchTerm));
+      const languages = getAvailableLanguages().filter(lang => {
+        const label = getLanguageLabel(lang).toLowerCase();
+        return lang.toLowerCase().includes(searchTerm) || label.includes(searchTerm);
+      });
       languages.forEach(lang => selectedLanguages.delete(lang));
       updateLanguageButtonLabel();
       renderLanguageOptions();
       renderChannelTable();
     }
 
-    function handleSubscriberFilter() {
-      filterState.minSubs = minSubsInput.value;
-      filterState.maxSubs = maxSubsInput.value;
+    function handleSubscriberInput(event) {
+      const target = event.target;
+      const digits = (target.value || '').replace(/\D/g, '');
+      target.value = digits;
+      if (target === minSubsInput) {
+        filterState.minSubs = digits;
+      } else if (target === maxSubsInput) {
+        filterState.maxSubs = digits;
+      }
+      target.value = formatWithThousandDots(digits);
       renderChannelTable();
     }
 
-    function handleEmailFilter(event) {
-      filterState.onlyWithEmail = event.target.checked;
-      renderChannelTable();
+    function formatSubscriberInput(event) {
+      const target = event.target;
+      const digits = (target.value || '').replace(/\D/g, '');
+      const formatted = formatWithThousandDots(digits);
+      target.value = formatted;
+      if (target === minSubsInput) {
+        filterState.minSubs = digits;
+      } else if (target === maxSubsInput) {
+        filterState.maxSubs = digits;
+      }
     }
 
     function handleUniqueEmailFilter(event) {
       filterState.uniqueEmails = event.target.checked;
+      renderChannelTable();
+    }
+
+    function handleTelegramFilter(event) {
+      filterState.telegramOnly = event.target.checked;
       renderChannelTable();
     }
 
@@ -722,9 +785,10 @@
           if (subsNum === null || subsNum > maxVal) continue;
         }
 
-        if (filterState.onlyWithEmail) {
-          const email = (meta.email || '').trim();
-          if (!email) continue;
+        if (filterState.telegramOnly) {
+          const hasTelegramField = Boolean((meta.telegram || '').trim());
+          const hasTelegramLink = (meta.links || []).some(link => /t\.me|telegram\.me/i.test(link));
+          if (!hasTelegramField && !hasTelegramLink) continue;
         }
 
         filtered.push({ id, subsNum });
