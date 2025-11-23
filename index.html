@@ -332,6 +332,20 @@
       align-items: flex-end;
     }
 
+    .search-bar {
+      margin: 14px 0;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      font-size: 14px;
+    }
+
     .filter-group {
       display: flex;
       flex-direction: column;
@@ -566,6 +580,9 @@
         <button class="tab-btn active" id="activeTabBtn" data-tab="active" aria-selected="true" role="tab">Active</button>
         <button class="tab-btn" id="archivedTabBtn" data-tab="archived" aria-selected="false" role="tab">Archived</button>
       </div>
+      <div class="search-bar">
+        <input type="text" id="globalSearchInput" class="search-input" placeholder="Search channels…" aria-label="Search channels">
+      </div>
       <div class="table-wrapper" id="channel-table-container">
         <table class="enriched-table" id="channel-table" aria-label="Enriched channels table">
           <thead>
@@ -651,6 +668,7 @@
     const maxSubsInput = document.getElementById('maxSubsFilter');
     const uniqueEmailCheckbox = document.getElementById('uniqueEmailFilter');
     const telegramOnlyCheckbox = document.getElementById('telegramOnlyFilter');
+    const globalSearchInput = document.getElementById('globalSearchInput');
 
     const selectedLanguages = new Set();
     const LANGUAGE_LABELS = {
@@ -680,7 +698,8 @@
       minSubs: '',
       maxSubs: '',
       uniqueEmails: false,
-      telegramOnly: false
+      telegramOnly: false,
+      searchText: ''
     };
     let lastFilteredChannelIds = [];
 
@@ -756,6 +775,7 @@
         filterState.maxSubs = saved.filterState.maxSubs || '';
         filterState.uniqueEmails = Boolean(saved.filterState.uniqueEmails);
         filterState.telegramOnly = Boolean(saved.filterState.telegramOnly);
+        filterState.searchText = saved.filterState.searchText || '';
       }
 
       languageSearchInput.value = filterState.languageSearch;
@@ -776,6 +796,7 @@
       maxSubsInput.value = formatWithThousandDots(filterState.maxSubs);
       uniqueEmailCheckbox.checked = filterState.uniqueEmails;
       telegramOnlyCheckbox.checked = filterState.telegramOnly;
+      globalSearchInput.value = filterState.searchText;
       updateLanguageButtonLabel();
 
       channelTextBuffer.clear();
@@ -834,6 +855,7 @@
     maxSubsInput.addEventListener('blur', formatSubscriberInput);
     uniqueEmailCheckbox.addEventListener('change', handleUniqueEmailFilter);
     telegramOnlyCheckbox.addEventListener('change', handleTelegramFilter);
+    globalSearchInput.addEventListener('input', handleGlobalSearch);
     document.addEventListener('click', handleOutsideClick);
 
     updateLanguageButtonLabel();
@@ -1047,6 +1069,35 @@
       persistState();
     }
 
+    function handleGlobalSearch(event) {
+      filterState.searchText = event.target.value || '';
+      renderChannelTable();
+      persistState();
+    }
+
+    function matchesSearch(meta, id) {
+      const term = (filterState.searchText || '').trim().toLowerCase();
+      if (!term) return true;
+
+      const knownUrl = meta?.url || `https://www.youtube.com/channel/${id}`;
+      const telegramHandle = meta?.telegramHandle || (meta?.telegram && !meta.telegram.startsWith('http') ? meta.telegram : '');
+      const telegramLink = meta?.telegramLink || (meta?.telegram && meta.telegram.startsWith('http') ? meta.telegram : '');
+      const hitsValue = meta?.cryptoHits ?? channelHits.get(id) ?? '';
+      const searchFields = [
+        meta?.name || '',
+        knownUrl,
+        normalizeEmailValue(meta?.email),
+        telegramHandle,
+        telegramLink,
+        meta?.language || '',
+        meta?.subs ?? '',
+        hitsValue,
+        ...(meta?.links || [])
+      ];
+
+      return searchFields.some(value => String(value || '').toLowerCase().includes(term));
+    }
+
     function getFilteredChannelIds(emailCountsOverride) {
       const emailCounts = emailCountsOverride || getEmailCounts();
       const baseIds = selectedTab === 'archived'
@@ -1076,6 +1127,8 @@
           const hasTelegramLink = (meta.links || []).some(link => /t\.me|telegram\.me/i.test(link));
           if (!hasTelegramField && !hasTelegramLink) continue;
         }
+
+        if (!matchesSearch(meta, id)) continue;
 
         filtered.push({ id, subsNum });
       }
@@ -1451,7 +1504,8 @@
           ].join('\n');
           const links = extractLinks(combinedText);
           const email = extractEmail(combinedText);
-          const telegram = extractTelegram(combinedText, links, email);
+          const telegramInfo = extractTelegram(combinedText, links, email);
+          const telegram = telegramInfo.handle || telegramInfo.link || '';
           const cryptoHits = channelHits.get(channelId) || '';
 
           channelMeta.set(channelId, {
@@ -1462,6 +1516,8 @@
             language,
             email,
             telegram,
+            telegramHandle: telegramInfo.handle,
+            telegramLink: telegramInfo.link,
             links,
             cryptoHits
           });
@@ -1566,17 +1622,17 @@
         tr.appendChild(emailCell);
 
         const telegramCell = document.createElement('td');
-        if (meta?.telegram) {
-          if (meta.telegram.startsWith('http')) {
-            const tgLink = document.createElement('a');
-            tgLink.href = meta.telegram;
-            tgLink.target = '_blank';
-            tgLink.rel = 'noopener noreferrer';
-            tgLink.textContent = meta.telegram;
-            telegramCell.appendChild(tgLink);
-          } else {
-            telegramCell.textContent = meta.telegram;
-          }
+        const telegramHandle = meta?.telegramHandle || (meta?.telegram && !meta.telegram.startsWith('http') ? meta.telegram : '');
+        const telegramLink = meta?.telegramLink || (meta?.telegram && meta.telegram.startsWith('http') ? meta.telegram : '');
+        if (telegramHandle) {
+          telegramCell.textContent = telegramHandle;
+        } else if (telegramLink) {
+          const tgLink = document.createElement('a');
+          tgLink.href = telegramLink;
+          tgLink.target = '_blank';
+          tgLink.rel = 'noopener noreferrer';
+          tgLink.textContent = telegramLink;
+          telegramCell.appendChild(tgLink);
         }
         tr.appendChild(telegramCell);
 
@@ -1688,18 +1744,20 @@
     }
 
     function extractTelegram(text, links, email) {
-      const telegramLink = links.find(link => /t\.me|telegram\.me/i.test(link));
-      if (telegramLink) return telegramLink;
+      const telegramLink = links.find(link => /t\.me|telegram\.me/i.test(link)) || '';
 
       const emailMatches = email ? [email] : [];
       const handles = text.match(/@[a-zA-Z0-9_]{3,}/g) || [];
-      for (const handle of handles) {
-        const isEmailPart = emailMatches.some(em => em.includes(handle.slice(1)));
+      let handle = '';
+      for (const candidate of handles) {
+        const isEmailPart = emailMatches.some(em => em.includes(candidate.slice(1)));
         if (!isEmailPart) {
-          return handle;
+          handle = candidate;
+          break;
         }
       }
-      return '';
+
+      return { handle, link: telegramLink };
     }
 
     async function fetchChannelDetailsWithRetries(idsBatch) {
