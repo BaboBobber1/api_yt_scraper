@@ -1216,18 +1216,23 @@
         return;
       }
 
-      const channelIdsToEnrich = Array.from(acceptedChannelIds).filter(id => !enrichedChannelIds.has(id));
-      if (!channelIdsToEnrich.length) {
-        setStatusMessage('All accepted channels are already enriched.');
+      const pendingChannelIds = Array.from(acceptedChannelIds).filter(id => !enrichedChannelIds.has(id));
+      if (!pendingChannelIds.length) {
+        setStatusMessage('All channels enriched.');
+        updateStatus();
         return;
       }
+
+      const limitedChannelIds = pendingChannelIds.slice(0, MAX_ENRICH_PER_RUN);
+      const totalToEnrich = limitedChannelIds.length;
 
       enriching = true;
       const previousState = status.state;
       status.state = 'Enriching';
       updateStatus();
 
-      const limitedChannelIds = channelIdsToEnrich.slice(0, MAX_ENRICH_PER_RUN);
+      setStatusMessage(`Enriching ${totalToEnrich} channel${totalToEnrich === 1 ? '' : 's'}…`);
+
       let processedIds = 0;
       let stoppedEarly = false;
 
@@ -1272,7 +1277,7 @@
 
         processedIds += batch.length;
         updateEnrichmentStatus();
-        setStatusMessage(`Enriched ${Math.min(processedIds, limitedChannelIds.length)} of ${limitedChannelIds.length} channels…`);
+        setStatusMessage(`Enriched ${Math.min(processedIds, totalToEnrich)} of ${totalToEnrich} channels…`);
         renderChannelTable();
       }
 
