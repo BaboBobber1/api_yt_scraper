@@ -378,6 +378,32 @@
       accent-color: var(--accent);
     }
 
+    .duplicate-email {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fecdd3;
+    }
+
+    .duplicate-email a {
+      color: #fecdd3;
+      text-decoration: underline;
+    }
+
+    .duplicate-indicator {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(239, 68, 68, 0.18);
+      color: #fca5a5;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
     .language-dropdown {
       position: absolute;
       top: 100%;
@@ -852,6 +878,21 @@
       return Array.from(new Set([...acceptedChannelIds, ...archivedChannelIds]));
     }
 
+    function normalizeEmailValue(email) {
+      return typeof email === 'string' ? email.trim() : '';
+    }
+
+    function getEmailCounts() {
+      const counts = new Map();
+      for (const id of getAllChannelIds()) {
+        const meta = channelMeta.get(id) || {};
+        const email = normalizeEmailValue(meta.email);
+        if (!email) continue;
+        counts.set(email, (counts.get(email) || 0) + 1);
+      }
+      return counts;
+    }
+
     function getAvailableLanguages() {
       const langs = [];
       for (const meta of channelMeta.values()) {
@@ -1006,22 +1047,8 @@
       persistState();
     }
 
-    function getEmailWinnerIds() {
-      const winners = new Map();
-      for (const id of getAllChannelIds()) {
-        const meta = channelMeta.get(id) || {};
-        const email = (meta.email || '').trim();
-        if (!email) continue;
-        const subsNum = parseSubscriberCount(meta.subs);
-        const existing = winners.get(email);
-        if (!existing || (subsNum ?? -1) > (existing.subsNum ?? -1)) {
-          winners.set(email, { id, subsNum });
-        }
-      }
-      return new Set(Array.from(winners.values()).map(entry => entry.id));
-    }
-
-    function getFilteredChannelIds() {
+    function getFilteredChannelIds(emailCountsOverride) {
+      const emailCounts = emailCountsOverride || getEmailCounts();
       const baseIds = selectedTab === 'archived'
         ? Array.from(archivedChannelIds || [])
         : Array.from(acceptedChannelIds || []);
@@ -1054,12 +1081,11 @@
       }
 
       if (filterState.uniqueEmails) {
-        const winnerIds = getEmailWinnerIds();
         filtered = filtered.filter(entry => {
           const meta = channelMeta.get(entry.id) || {};
-          const email = (meta.email || '').trim();
-          if (!email) return true;
-          return winnerIds.has(entry.id);
+          const email = normalizeEmailValue(meta.email);
+          if (!email) return false;
+          return emailCounts.get(email) === 1;
         });
       }
 
@@ -1468,7 +1494,14 @@
         renderLanguageOptions();
       }
 
-      const channelIds = getFilteredChannelIds();
+      const emailCounts = getEmailCounts();
+      const duplicateEmails = new Set(
+        Array.from(emailCounts.entries())
+          .filter(([, count]) => count >= 2)
+          .map(([email]) => email)
+      );
+
+      const channelIds = getFilteredChannelIds(emailCounts);
       lastFilteredChannelIds = channelIds;
       updateVisibleCount(channelIds.length);
 
@@ -1510,11 +1543,25 @@
         tr.appendChild(langCell);
 
         const emailCell = document.createElement('td');
-        if (meta?.email) {
+        const normalizedEmail = normalizeEmailValue(meta?.email);
+        const isDuplicateEmail = normalizedEmail && duplicateEmails.has(normalizedEmail);
+        if (normalizedEmail) {
+          const wrapper = document.createElement('span');
+          if (isDuplicateEmail) wrapper.className = 'duplicate-email';
+
           const emailLink = document.createElement('a');
-          emailLink.href = `mailto:${meta.email}`;
-          emailLink.textContent = meta.email;
-          emailCell.appendChild(emailLink);
+          emailLink.href = `mailto:${normalizedEmail}`;
+          emailLink.textContent = normalizedEmail;
+          wrapper.appendChild(emailLink);
+
+          if (isDuplicateEmail) {
+            const dup = document.createElement('span');
+            dup.className = 'duplicate-indicator';
+            dup.textContent = 'Duplicate';
+            wrapper.appendChild(dup);
+          }
+
+          emailCell.appendChild(wrapper);
         }
         tr.appendChild(emailCell);
 
