@@ -200,6 +200,40 @@
       width: 100%;
     }
 
+    .tabs {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+
+    .tab-btn {
+      padding: 10px 16px;
+      background: transparent;
+      color: var(--text);
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .tab-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .action-btn {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+
     table.enriched-table {
       width: 100%;
       border-collapse: collapse;
@@ -436,6 +470,8 @@
       <div class="results-header">
         <div><strong>Unique channels: </strong><span id="channelCount">0</span> <span id="visibleCount" style="color: var(--muted);"></span></div>
         <div class="results-actions">
+          <button class="ghost" id="archiveCurrentFilterBtn">Archive current filter</button>
+          <button class="ghost" id="archiveExportedBtn">Archive exported (0)</button>
           <button class="ghost" id="enrichBtn">Enrich Channels</button>
           <button class="ghost" id="downloadCsvBtn">Download CSV</button>
           <button class="ghost" id="downloadBtn">Download .txt</button>
@@ -469,6 +505,10 @@
           <label><input type="checkbox" id="telegramOnlyFilter"> Telegram only</label>
         </div>
       </div>
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" id="activeTabBtn" data-tab="active" aria-selected="true" role="tab">Active</button>
+        <button class="tab-btn" id="archivedTabBtn" data-tab="archived" aria-selected="false" role="tab">Archived</button>
+      </div>
       <div class="table-wrapper" id="channel-table-container">
         <table class="enriched-table" id="channel-table" aria-label="Enriched channels table">
           <thead>
@@ -481,6 +521,7 @@
               <th>Telegram</th>
               <th>Crypto hits</th>
               <th>Links</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="channel-table-body"></tbody>
@@ -497,6 +538,7 @@
     let running = false;
     let knownChannels = new Set();
     const acceptedChannelIds = new Set();
+    const archivedChannelIds = new Set();
     const channelHits = new Map();
     const channelMeta = new Map();
     const enrichedChannelIds = new Set();
@@ -505,6 +547,8 @@
     let videosForCurrentKeyword = 0;
     let status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
     let enriching = false;
+    let selectedTab = 'active';
+    let lastExportedChannelIds = new Set();
 
     const MIN_CRYPTO_VIDEOS = 3;
     const MAX_ENRICH_PER_RUN = 2000;
@@ -526,6 +570,10 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const downloadCsvBtn = document.getElementById('downloadCsvBtn');
     const enrichBtn = document.getElementById('enrichBtn');
+    const archiveCurrentFilterBtn = document.getElementById('archiveCurrentFilterBtn');
+    const archiveExportedBtn = document.getElementById('archiveExportedBtn');
+    const activeTabBtn = document.getElementById('activeTabBtn');
+    const archivedTabBtn = document.getElementById('archivedTabBtn');
     const stateEl = document.getElementById('state');
     const keywordEl = document.getElementById('currentKeyword');
     const videosProcessedEl = document.getElementById('videosProcessed');
@@ -587,6 +635,10 @@
     downloadBtn.addEventListener('click', downloadChannels);
     downloadCsvBtn.addEventListener('click', downloadCsv);
     enrichBtn.addEventListener('click', enrichChannels);
+    archiveCurrentFilterBtn.addEventListener('click', archiveCurrentFilter);
+    archiveExportedBtn.addEventListener('click', archiveExported);
+    activeTabBtn.addEventListener('click', () => switchTab('active'));
+    archivedTabBtn.addEventListener('click', () => switchTab('archived'));
     languageToggle.addEventListener('click', toggleLanguageDropdown);
     languageSearchInput.addEventListener('input', handleLanguageSearch);
     languageSelectAllBtn.addEventListener('click', selectAllVisibleLanguages);
@@ -616,6 +668,10 @@
       const digits = String(value || '').replace(/\D/g, '');
       if (!digits) return '';
       return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function getAllChannelIds() {
+      return Array.from(new Set([...acceptedChannelIds, ...archivedChannelIds]));
     }
 
     function getAvailableLanguages() {
@@ -764,13 +820,30 @@
       renderChannelTable();
     }
 
+    function getEmailWinnerIds() {
+      const winners = new Map();
+      for (const id of getAllChannelIds()) {
+        const meta = channelMeta.get(id) || {};
+        const email = (meta.email || '').trim();
+        if (!email) continue;
+        const subsNum = parseSubscriberCount(meta.subs);
+        const existing = winners.get(email);
+        if (!existing || (subsNum ?? -1) > (existing.subsNum ?? -1)) {
+          winners.set(email, { id, subsNum });
+        }
+      }
+      return new Set(Array.from(winners.values()).map(entry => entry.id));
+    }
+
     function getFilteredChannelIds() {
-      const baseIds = Array.from(acceptedChannelIds || []);
+      const baseIds = selectedTab === 'archived'
+        ? Array.from(archivedChannelIds || [])
+        : Array.from(acceptedChannelIds || []);
       const languageActive = selectedLanguages.size > 0;
       const minVal = filterState.minSubs !== '' ? parseSubscriberCount(filterState.minSubs) : null;
       const maxVal = filterState.maxSubs !== '' ? parseSubscriberCount(filterState.maxSubs) : null;
 
-      const filtered = [];
+      let filtered = [];
 
       for (const id of baseIds) {
         const meta = channelMeta.get(id) || {};
@@ -795,17 +868,13 @@
       }
 
       if (filterState.uniqueEmails) {
-        const emailMap = new Map();
-        for (const entry of filtered) {
+        const winnerIds = getEmailWinnerIds();
+        filtered = filtered.filter(entry => {
           const meta = channelMeta.get(entry.id) || {};
           const email = (meta.email || '').trim();
-          if (!email) continue;
-          const existing = emailMap.get(email);
-          if (!existing || (entry.subsNum ?? -1) > (existing.subsNum ?? -1)) {
-            emailMap.set(email, entry);
-          }
-        }
-        return Array.from(emailMap.values()).map(item => item.id);
+          if (!email) return true;
+          return winnerIds.has(entry.id);
+        });
       }
 
       return filtered.map(item => item.id);
@@ -815,6 +884,26 @@
       if (!visibleCountEl) return;
       const suffix = typeof count === 'number' ? `• Visible: ${count}` : '';
       visibleCountEl.textContent = suffix ? suffix : '';
+    }
+
+    function updateArchiveExportedLabel() {
+      archiveExportedBtn.textContent = `Archive exported (${lastExportedChannelIds.size})`;
+    }
+
+    function switchTab(tab) {
+      selectedTab = tab;
+      updateTabUI();
+      renderChannelTable();
+    }
+
+    function updateTabUI() {
+      const isActive = selectedTab === 'active';
+      activeTabBtn.classList.toggle('active', isActive);
+      archivedTabBtn.classList.toggle('active', !isActive);
+      activeTabBtn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      archivedTabBtn.setAttribute('aria-selected', isActive ? 'false' : 'true');
+      archiveCurrentFilterBtn.disabled = !isActive;
+      archiveExportedBtn.disabled = !isActive;
     }
 
     function isCryptoVideo(title, description) {
@@ -846,9 +935,10 @@
       stateEl.textContent = status.state;
       keywordEl.textContent = status.keyword || '-';
       videosProcessedEl.textContent = totalVideosProcessed;
-      uniqueChannelsEl.textContent = acceptedChannelIds.size;
+      const totalChannels = acceptedChannelIds.size + archivedChannelIds.size;
+      uniqueChannelsEl.textContent = totalChannels;
       apiKeyIndexEl.textContent = apiKeys.length ? `${currentKeyIndex + 1} / ${apiKeys.length}` : '0 / 0';
-      channelCountEl.textContent = acceptedChannelIds.size;
+      channelCountEl.textContent = totalChannels;
       updateEnrichmentStatus();
     }
 
@@ -871,13 +961,54 @@
       channelMeta.clear();
       enrichedChannelIds.clear();
       channelTextBuffer.clear();
+      archivedChannelIds.clear();
+      lastExportedChannelIds = new Set();
       totalVideosProcessed = 0;
       videosForCurrentKeyword = 0;
       status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
       progressBar.style.width = '0%';
       setStatusMessage('');
+      selectedTab = 'active';
+      updateTabUI();
+      updateArchiveExportedLabel();
       updateStatus();
       renderChannelTable();
+    }
+
+    function archiveChannelIds(ids = []) {
+      let moved = false;
+      for (const id of ids) {
+        if (acceptedChannelIds.has(id)) {
+          acceptedChannelIds.delete(id);
+          archivedChannelIds.add(id);
+          moved = true;
+        }
+      }
+      if (moved) {
+        updateStatus();
+        renderChannelTable();
+      }
+    }
+
+    function archiveCurrentFilter() {
+      if (selectedTab !== 'active') return;
+      const filteredIds = getFilteredChannelIds();
+      if (!filteredIds.length) return;
+      archiveChannelIds(filteredIds);
+    }
+
+    function archiveExported() {
+      if (selectedTab !== 'active') return;
+      if (!lastExportedChannelIds.size) return;
+      const idsToArchive = Array.from(lastExportedChannelIds).filter(id => acceptedChannelIds.has(id));
+      archiveChannelIds(idsToArchive);
+      lastExportedChannelIds = new Set();
+      updateArchiveExportedLabel();
+    }
+
+    function storeLastExported(ids) {
+      lastExportedChannelIds = new Set(ids || []);
+      updateArchiveExportedLabel();
     }
 
     function downloadChannels() {
@@ -886,6 +1017,7 @@
         alert('No channels to download yet.');
         return;
       }
+      storeLastExported(filteredIds);
       const urls = filteredIds.map(id => {
         const meta = channelMeta.get(id) || {};
         return meta.url || `https://www.youtube.com/channel/${id}`;
@@ -958,7 +1090,7 @@
             const newHits = prevHits + 1;
             channelHits.set(channelId, newHits);
 
-            if (newHits >= MIN_CRYPTO_VIDEOS && !acceptedChannelIds.has(channelId)) {
+            if (newHits >= MIN_CRYPTO_VIDEOS && !acceptedChannelIds.has(channelId) && !archivedChannelIds.has(channelId)) {
               acceptedChannelIds.add(channelId);
               const channelUrl = `https://www.youtube.com/channel/${channelId}`;
               if (!knownChannels.has(channelUrl)) {
@@ -1062,11 +1194,11 @@
     }
 
     function updateEnrichmentStatus() {
-      const enriched = enrichedChannelIds.size;
-      const accepted = acceptedChannelIds.size;
+      const totalChannels = acceptedChannelIds.size + archivedChannelIds.size;
+      const enriched = Array.from(enrichedChannelIds).filter(id => acceptedChannelIds.has(id) || archivedChannelIds.has(id)).length;
       enrichedCountEl.textContent = enriched;
-      acceptedCountEl.textContent = accepted;
-      const label = `Enriched channels: ${enriched} / ${accepted || 0}`;
+      acceptedCountEl.textContent = totalChannels;
+      const label = `Enriched channels: ${enriched} / ${totalChannels || 0}`;
       enrichmentStatusEl.setAttribute('aria-label', label);
     }
 
@@ -1170,7 +1302,7 @@
       if (!channelIds.length) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 8;
+        cell.colSpan = 9;
         cell.className = 'empty-row';
         cell.textContent = 'No channels yet.';
         row.appendChild(cell);
@@ -1302,6 +1434,19 @@
         }
         tr.appendChild(linksCell);
 
+        const actionCell = document.createElement('td');
+        if (selectedTab === 'active') {
+          const archiveBtn = document.createElement('button');
+          archiveBtn.textContent = 'Archive';
+          archiveBtn.className = 'neutral action-btn';
+          archiveBtn.addEventListener('click', () => archiveChannelIds([channelId]));
+          actionCell.appendChild(archiveBtn);
+        } else {
+          actionCell.textContent = '-';
+          actionCell.style.color = 'var(--muted)';
+        }
+        tr.appendChild(actionCell);
+
         tbody.appendChild(tr);
       }
     }
@@ -1399,6 +1544,7 @@
         alert('No enriched channel data to download yet.');
         return;
       }
+      storeLastExported(filteredIds);
 
       const header = ['channel_id','channel_url','channel_name','subscribers','language','email','telegram','crypto_hits','links'];
       const escapeCsv = (value) => {
@@ -1434,6 +1580,8 @@
       URL.revokeObjectURL(url);
     }
 
+    updateTabUI();
+    updateArchiveExportedLabel();
     renderChannelTable();
   </script>
 </body>
