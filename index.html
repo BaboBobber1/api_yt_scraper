@@ -215,6 +215,92 @@
       gap: 10px;
       align-items: center;
     }
+
+    .enriched-table-container {
+      margin-top: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    table.enriched-table {
+      width: 100%;
+      border-collapse: collapse;
+      color: var(--text);
+    }
+
+    table.enriched-table thead {
+      position: sticky;
+      top: 0;
+      background: #1d1d2c;
+      z-index: 1;
+    }
+
+    table.enriched-table th {
+      text-align: left;
+      padding: 10px;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    table.enriched-table td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    table.enriched-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .enriched-table a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .enriched-table a:hover { text-decoration: underline; }
+
+    .links-toggle {
+      background: #2b2b3d;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .links-popup {
+      margin-top: 8px;
+      background: #1a1a26;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 8px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .links-popup.hidden { display: none; }
+
+    .links-popup a {
+      display: block;
+      color: var(--accent-2);
+      word-break: break-all;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .links-popup a:last-child { margin-bottom: 0; }
+
+    .empty-row {
+      text-align: center;
+      color: var(--muted);
+      padding: 14px;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -271,6 +357,23 @@
       </div>
       <div class="enrichment-status" id="enrichmentStatus">Enriched channels: <span id="enrichedCount">0</span> / <span id="acceptedCount">0</span></div>
       <div class="results" id="results"></div>
+      <div class="enriched-table-container">
+        <table class="enriched-table" aria-label="Enriched channels table">
+          <thead>
+            <tr>
+              <th>Channel name</th>
+              <th>Channel URL</th>
+              <th>Subscribers</th>
+              <th>Language</th>
+              <th>Email</th>
+              <th>Telegram</th>
+              <th>Crypto hits</th>
+              <th>Links</th>
+            </tr>
+          </thead>
+          <tbody id="enrichedTbody"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 
@@ -319,6 +422,7 @@
     const progressBar = document.getElementById('progressBar');
     const statusMessageEl = document.getElementById('statusMessage');
     const resultsEl = document.getElementById('results');
+    const enrichedTbody = document.getElementById('enrichedTbody');
     const channelCountEl = document.getElementById('channelCount');
     const enrichedCountEl = document.getElementById('enrichedCount');
     const acceptedCountEl = document.getElementById('acceptedCount');
@@ -408,6 +512,7 @@
       progressBar.style.width = '0%';
       setStatusMessage('');
       updateStatus();
+      renderEnrichedTable();
     }
 
     function downloadChannels() {
@@ -670,6 +775,7 @@
         processedIds += batch.length;
         updateEnrichmentStatus();
         setStatusMessage(`Enriched ${Math.min(processedIds, limitedChannelIds.length)} of ${limitedChannelIds.length} channels…`);
+        renderEnrichedTable();
       }
 
       if (status.state !== 'All keys exhausted') {
@@ -678,6 +784,110 @@
       }
       enriching = false;
       updateStatus();
+      renderEnrichedTable();
+    }
+
+    function renderEnrichedTable() {
+      if (!enrichedTbody) return;
+      enrichedTbody.innerHTML = '';
+
+      if (!channelMeta.size) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 8;
+        cell.className = 'empty-row';
+        cell.textContent = 'No enriched channels yet.';
+        row.appendChild(cell);
+        enrichedTbody.appendChild(row);
+        return;
+      }
+
+      for (const [, meta] of channelMeta.entries()) {
+        const tr = document.createElement('tr');
+
+        const nameCell = document.createElement('td');
+        nameCell.textContent = meta.name || '';
+        tr.appendChild(nameCell);
+
+        const urlCell = document.createElement('td');
+        if (meta.url) {
+          const link = document.createElement('a');
+          link.href = meta.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = meta.url;
+          urlCell.appendChild(link);
+        }
+        tr.appendChild(urlCell);
+
+        const subsCell = document.createElement('td');
+        subsCell.textContent = meta.subs ?? '';
+        tr.appendChild(subsCell);
+
+        const langCell = document.createElement('td');
+        langCell.textContent = meta.language || '';
+        tr.appendChild(langCell);
+
+        const emailCell = document.createElement('td');
+        if (meta.email) {
+          const emailLink = document.createElement('a');
+          emailLink.href = `mailto:${meta.email}`;
+          emailLink.textContent = meta.email;
+          emailCell.appendChild(emailLink);
+        }
+        tr.appendChild(emailCell);
+
+        const telegramCell = document.createElement('td');
+        if (meta.telegram) {
+          if (meta.telegram.startsWith('http')) {
+            const tgLink = document.createElement('a');
+            tgLink.href = meta.telegram;
+            tgLink.target = '_blank';
+            tgLink.rel = 'noopener noreferrer';
+            tgLink.textContent = meta.telegram;
+            telegramCell.appendChild(tgLink);
+          } else {
+            telegramCell.textContent = meta.telegram;
+          }
+        }
+        tr.appendChild(telegramCell);
+
+        const hitsCell = document.createElement('td');
+        hitsCell.textContent = meta.cryptoHits ?? '';
+        tr.appendChild(hitsCell);
+
+        const linksCell = document.createElement('td');
+        const linkCount = meta.links ? meta.links.length : 0;
+        if (linkCount > 0) {
+          const btn = document.createElement('button');
+          btn.className = 'links-toggle';
+          btn.type = 'button';
+          btn.textContent = `${linkCount} link${linkCount === 1 ? '' : 's'}`;
+
+          const popup = document.createElement('div');
+          popup.className = 'links-popup hidden';
+          for (const link of meta.links) {
+            const linkEl = document.createElement('a');
+            linkEl.href = link;
+            linkEl.target = '_blank';
+            linkEl.rel = 'noopener noreferrer';
+            linkEl.textContent = link;
+            popup.appendChild(linkEl);
+          }
+
+          btn.addEventListener('click', () => {
+            popup.classList.toggle('hidden');
+          });
+
+          linksCell.appendChild(btn);
+          linksCell.appendChild(popup);
+        } else {
+          linksCell.textContent = '-';
+        }
+        tr.appendChild(linksCell);
+
+        enrichedTbody.appendChild(tr);
+      }
     }
 
     function extractLinks(text) {
@@ -805,6 +1015,8 @@
       a.remove();
       URL.revokeObjectURL(url);
     }
+
+    renderEnrichedTable();
   </script>
 </body>
 </html>
