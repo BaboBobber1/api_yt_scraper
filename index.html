@@ -450,9 +450,9 @@
       stateEl.textContent = status.state;
       keywordEl.textContent = status.keyword || '-';
       videosProcessedEl.textContent = totalVideosProcessed;
-      uniqueChannelsEl.textContent = knownChannels.size;
+      uniqueChannelsEl.textContent = acceptedChannelIds.size;
       apiKeyIndexEl.textContent = apiKeys.length ? `${currentKeyIndex + 1} / ${apiKeys.length}` : '0 / 0';
-      channelCountEl.textContent = knownChannels.size;
+      channelCountEl.textContent = acceptedChannelIds.size;
       updateEnrichmentStatus();
     }
 
@@ -520,11 +520,6 @@
       running = true;
       currentKeyIndex = 0;
       totalVideosProcessed = 0;
-      acceptedChannelIds.clear();
-      channelHits.clear();
-      channelMeta.clear();
-      enrichedChannelIds.clear();
-      channelTextBuffer.clear();
       status = { state: 'Running', keyword: '', page: 0, keyIndex: 0 };
       setStatusMessage('Starting scan…');
       updateStatus();
