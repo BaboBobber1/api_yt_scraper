@@ -234,7 +234,6 @@
       <div class="status-grid">
         <div class="stat"><div class="label">State</div><div class="value" id="state">Idle</div></div>
         <div class="stat"><div class="label">Current keyword</div><div class="value" id="currentKeyword">-</div></div>
-        <div class="stat"><div class="label">Page</div><div class="value" id="page">0</div></div>
         <div class="stat"><div class="label">Videos processed</div><div class="value" id="videosProcessed">0</div></div>
         <div class="stat"><div class="label">Unique channels</div><div class="value" id="uniqueChannels">0</div></div>
         <div class="stat"><div class="label">API key</div><div class="value" id="apiKeyIndex">0 / 0</div></div>
@@ -261,9 +260,21 @@
     let maxResultsPerKeyword = 1000;
     let running = false;
     let knownChannels = new Set();
+    const acceptedChannelIds = new Set();
+    const channelHits = new Map();
     let totalVideosProcessed = 0;
     let videosForCurrentKeyword = 0;
     let status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0 };
+
+    const MIN_CRYPTO_VIDEOS = 3;
+    const CRYPTO_KEYWORDS = [
+      "bitcoin","btc","ethereum","eth","sol","solana","xrp","bnb","doge","dogecoin","avax",
+      "crypto","cryptocurrency","altcoin","altcoins","memecoin","memecoins",
+      "defi","web3","nft","airdrop","blockchain","token","tokens",
+      "futures","perp","perpetual","leverage","margin",
+      "binance","bybit","okx","bitget","mexc","kucoin",
+      "trading","trade","scalping","scalp","chart","technical analysis","price prediction"
+    ];
 
     const apiKeysInput = document.getElementById('apiKeys');
     const keywordsInput = document.getElementById('keywords');
@@ -274,7 +285,6 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const stateEl = document.getElementById('state');
     const keywordEl = document.getElementById('currentKeyword');
-    const pageEl = document.getElementById('page');
     const videosProcessedEl = document.getElementById('videosProcessed');
     const uniqueChannelsEl = document.getElementById('uniqueChannels');
     const apiKeyIndexEl = document.getElementById('apiKeyIndex');
@@ -290,6 +300,11 @@
 
     function parseLines(value) {
       return value.split('\n').map(v => v.trim()).filter(Boolean);
+    }
+
+    function isCryptoVideo(title, description) {
+      const text = (title + " " + (description || "")).toLowerCase();
+      return CRYPTO_KEYWORDS.some(kw => text.includes(kw));
     }
 
     function getCurrentApiKey() {
@@ -315,7 +330,6 @@
     function updateStatus() {
       stateEl.textContent = status.state;
       keywordEl.textContent = status.keyword || '-';
-      pageEl.textContent = status.page;
       videosProcessedEl.textContent = totalVideosProcessed;
       uniqueChannelsEl.textContent = knownChannels.size;
       apiKeyIndexEl.textContent = apiKeys.length ? `${currentKeyIndex + 1} / ${apiKeys.length}` : '0 / 0';
@@ -348,6 +362,8 @@
 
     function clearResults() {
       knownChannels.clear();
+      acceptedChannelIds.clear();
+      channelHits.clear();
       resultsEl.innerHTML = '';
       totalVideosProcessed = 0;
       videosForCurrentKeyword = 0;
@@ -393,6 +409,8 @@
       running = true;
       currentKeyIndex = 0;
       totalVideosProcessed = 0;
+      acceptedChannelIds.clear();
+      channelHits.clear();
       status = { state: 'Running', keyword: '', page: 0, keyIndex: 0 };
       setStatusMessage('Starting scan…');
       updateStatus();
@@ -417,7 +435,18 @@
             videosForCurrentKeyword += 1;
             totalVideosProcessed += 1;
             const channelId = item?.snippet?.channelId;
-            if (channelId) {
+            const title = item?.snippet?.title || '';
+            const description = item?.snippet?.description || '';
+            if (!channelId || !isCryptoVideo(title, description)) {
+              continue;
+            }
+
+            const prevHits = channelHits.get(channelId) || 0;
+            const newHits = prevHits + 1;
+            channelHits.set(channelId, newHits);
+
+            if (newHits >= MIN_CRYPTO_VIDEOS && !acceptedChannelIds.has(channelId)) {
+              acceptedChannelIds.add(channelId);
               const channelUrl = `https://www.youtube.com/channel/${channelId}`;
               if (!knownChannels.has(channelUrl)) {
                 knownChannels.add(channelUrl);
