@@ -341,8 +341,8 @@
         </div>
       </div>
       <div class="enrichment-status" id="enrichmentStatus">Enriched channels: <span id="enrichedCount">0</span> / <span id="acceptedCount">0</span></div>
-      <div class="table-wrapper">
-        <table class="enriched-table" aria-label="Enriched channels table">
+      <div class="table-wrapper" id="channel-table-container">
+        <table class="enriched-table" id="channel-table" aria-label="Enriched channels table">
           <thead>
             <tr>
               <th>Channel name</th>
@@ -355,7 +355,7 @@
               <th>Links</th>
             </tr>
           </thead>
-          <tbody id="channelTbody"></tbody>
+          <tbody id="channel-table-body"></tbody>
         </table>
       </div>
     </section>
@@ -405,7 +405,6 @@
     const apiKeyIndexEl = document.getElementById('apiKeyIndex');
     const progressBar = document.getElementById('progressBar');
     const statusMessageEl = document.getElementById('statusMessage');
-    const channelTbody = document.getElementById('channelTbody');
     const channelCountEl = document.getElementById('channelCount');
     const enrichedCountEl = document.getElementById('enrichedCount');
     const acceptedCountEl = document.getElementById('acceptedCount');
@@ -759,8 +758,9 @@
     }
 
     function renderChannelTable() {
-      if (!channelTbody) return;
-      channelTbody.innerHTML = '';
+      const tbody = document.getElementById('channel-table-body');
+      if (!tbody) return;
+      tbody.innerHTML = '';
 
       if (!acceptedChannelIds.size) {
         const row = document.createElement('tr');
@@ -769,7 +769,7 @@
         cell.className = 'empty-row';
         cell.textContent = 'No channels yet.';
         row.appendChild(cell);
-        channelTbody.appendChild(row);
+        tbody.appendChild(row);
         return;
       }
 
@@ -867,7 +867,7 @@
         }
         tr.appendChild(linksCell);
 
-        channelTbody.appendChild(tr);
+        tbody.appendChild(tr);
       }
     }
 
