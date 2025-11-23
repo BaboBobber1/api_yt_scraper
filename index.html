@@ -241,44 +241,22 @@
 
     .links-cell { position: relative; }
 
-    .links-toggle {
-      background: #2b2b3d;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      padding: 6px 10px;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
+    .link-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      margin-right: 4px;
+      margin-bottom: 2px;
+      border-radius: 9999px;
+      background-color: #111827;
       color: #e5e7eb;
+      font-size: 0.75rem;
+      text-decoration: none;
       white-space: nowrap;
     }
 
-    .links-popup {
-      position: absolute;
-      left: 0;
-      top: calc(100% + 6px);
-      background: #111827;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      padding: 8px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-      max-height: 200px;
-      overflow-y: auto;
-      white-space: normal;
-      word-break: break-all;
-      z-index: 20;
-      min-width: 220px;
+    .link-badge:hover {
+      text-decoration: underline;
     }
-
-    .hidden { display: none; }
-
-    .link-entry {
-      display: block;
-      color: var(--accent-2);
-      margin-bottom: 6px;
-      font-size: 13px;
-    }
-
-    .link-entry:last-child { margin-bottom: 0; }
 
     .empty-row {
       text-align: center;
@@ -829,35 +807,67 @@
         const linksCell = document.createElement('td');
         linksCell.className = 'links-cell';
         const links = meta && Array.isArray(meta.links) ? meta.links : [];
-        const linkCount = links.length;
-        if (linkCount > 0) {
-          const btn = document.createElement('button');
-          btn.className = 'links-toggle';
-          btn.type = 'button';
-          btn.textContent = `${linkCount} link${linkCount === 1 ? '' : 's'}`;
+        if (links.length > 0) {
+          const linkItems = [];
+          const seen = new Set();
 
-          const popup = document.createElement('div');
-          popup.className = 'links-popup hidden';
-          for (const linkUrl of links) {
-            const linkEl = document.createElement('a');
-            linkEl.href = linkUrl;
-            linkEl.target = '_blank';
-            linkEl.rel = 'noopener noreferrer';
-            linkEl.textContent = linkUrl;
-            linkEl.className = 'link-entry';
-            popup.appendChild(linkEl);
+          for (const url of links) {
+            let hostname = '';
+            try {
+              const u = new URL(url);
+              hostname = u.hostname.toLowerCase();
+            } catch (e) {
+              hostname = url.toLowerCase();
+            }
+
+            let label = '';
+            if (/t\.me|telegram\.me/.test(hostname)) {
+              label = 'Telegram';
+            } else if (/twitter\.com|x\.com/.test(hostname)) {
+              label = 'X';
+            } else if (/discord\.gg|discord\.com/.test(hostname)) {
+              label = 'Discord';
+            } else if (/youtube\.com|youtu\.be/.test(hostname)) {
+              label = 'YouTube';
+            } else if (/mexc\.com/.test(hostname)) {
+              label = 'MEXC';
+            } else if (/bybit\.com/.test(hostname)) {
+              label = 'Bybit';
+            } else if (/binance\.com/.test(hostname)) {
+              label = 'Binance';
+            } else if (/okx\.com/.test(hostname)) {
+              label = 'OKX';
+            } else if (/bitget\.com/.test(hostname)) {
+              label = 'Bitget';
+            } else if (/kucoin\.com/.test(hostname)) {
+              label = 'KuCoin';
+            } else {
+              const cleaned = hostname.replace(/^www\./, '');
+              const base = cleaned.split('.')[0] || cleaned || hostname || url;
+              label = base.charAt(0).toUpperCase() + base.slice(1).toLowerCase();
+            }
+
+            const key = `${label}|${url}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            linkItems.push({ label, url });
           }
 
-          btn.addEventListener('click', (event) => {
-            const cell = event.currentTarget.closest('.links-cell');
-            const popupEl = cell?.querySelector('.links-popup');
-            if (popupEl) {
-              popupEl.classList.toggle('hidden');
-            }
-          });
+          linkItems.sort((a, b) => a.label.localeCompare(b.label));
 
-          linksCell.appendChild(btn);
-          linksCell.appendChild(popup);
+          if (!linkItems.length) {
+            linksCell.textContent = '-';
+          } else {
+            for (const item of linkItems) {
+              const linkEl = document.createElement('a');
+              linkEl.href = item.url;
+              linkEl.target = '_blank';
+              linkEl.rel = 'noopener noreferrer';
+              linkEl.textContent = item.label;
+              linkEl.classList.add('link-badge');
+              linksCell.appendChild(linkEl);
+            }
+          }
         } else {
           linksCell.textContent = '-';
         }
