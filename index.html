@@ -658,6 +658,135 @@
     };
     let lastFilteredChannelIds = [];
 
+    const STORAGE_KEY = 'cryptoYoutubeHarvesterState';
+    const APP_STATE_VERSION = 1;
+
+    function serializeAppState() {
+      return {
+        version: APP_STATE_VERSION,
+        apiKeys: parseLines(apiKeysInput.value),
+        keywords: parseLines(keywordsInput.value),
+        maxResultsPerKeyword: parseInt(maxResultsInput.value, 10) || 1000,
+        acceptedChannelIds: Array.from(acceptedChannelIds),
+        archivedChannelIds: Array.from(archivedChannelIds),
+        channelHits: Array.from(channelHits.entries()),
+        channelMeta: Array.from(channelMeta.entries()).map(([id, meta]) => ({ id, ...meta })),
+        enrichedChannelIds: Array.from(enrichedChannelIds),
+        selectedTab,
+        selectedLanguages: Array.from(selectedLanguages),
+        filterState: { ...filterState },
+        lastExportedChannelIds: Array.from(lastExportedChannelIds),
+        status: { ...status },
+        statusMessage: statusMessageEl.textContent || '',
+        totalVideosProcessed,
+        videosForCurrentKeyword,
+        currentKeyIndex,
+        channelTextBuffer: Array.from(channelTextBuffer.entries()),
+        knownChannels: Array.from(knownChannels)
+      };
+    }
+
+    function persistState() {
+      try {
+        const state = serializeAppState();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (err) {
+        // Ignore persistence errors to keep app functional
+      }
+    }
+
+    function applySavedState(saved) {
+      if (!saved) return false;
+      if (saved.version && saved.version !== APP_STATE_VERSION) return false;
+
+      acceptedChannelIds.clear();
+      (saved.acceptedChannelIds || []).forEach(id => acceptedChannelIds.add(id));
+
+      archivedChannelIds.clear();
+      (saved.archivedChannelIds || []).forEach(id => archivedChannelIds.add(id));
+
+      channelHits.clear();
+      (saved.channelHits || []).forEach(entry => {
+        const [id, hits] = entry || [];
+        if (id) channelHits.set(id, hits);
+      });
+
+      channelMeta.clear();
+      (saved.channelMeta || []).forEach(meta => {
+        if (meta && meta.id) {
+          channelMeta.set(meta.id, { ...meta });
+        }
+      });
+
+      enrichedChannelIds.clear();
+      (saved.enrichedChannelIds || []).forEach(id => enrichedChannelIds.add(id));
+
+      selectedLanguages.clear();
+      (saved.selectedLanguages || []).forEach(lang => selectedLanguages.add(lang));
+
+      if (saved.filterState) {
+        filterState.languageSearch = saved.filterState.languageSearch || '';
+        filterState.minSubs = saved.filterState.minSubs || '';
+        filterState.maxSubs = saved.filterState.maxSubs || '';
+        filterState.uniqueEmails = Boolean(saved.filterState.uniqueEmails);
+        filterState.telegramOnly = Boolean(saved.filterState.telegramOnly);
+      }
+
+      languageSearchInput.value = filterState.languageSearch;
+
+      lastExportedChannelIds = new Set(saved.lastExportedChannelIds || []);
+
+      selectedTab = saved.selectedTab || 'active';
+
+      apiKeys = Array.isArray(saved.apiKeys) ? saved.apiKeys : [];
+      keywords = Array.isArray(saved.keywords) ? saved.keywords : [];
+      maxResultsPerKeyword = saved.maxResultsPerKeyword || maxResultsPerKeyword;
+
+      apiKeysInput.value = (apiKeys || []).join('\n');
+      keywordsInput.value = (keywords || []).join('\n');
+      maxResultsInput.value = maxResultsPerKeyword;
+
+      minSubsInput.value = formatWithThousandDots(filterState.minSubs);
+      maxSubsInput.value = formatWithThousandDots(filterState.maxSubs);
+      uniqueEmailCheckbox.checked = filterState.uniqueEmails;
+      telegramOnlyCheckbox.checked = filterState.telegramOnly;
+      updateLanguageButtonLabel();
+
+      channelTextBuffer.clear();
+      (saved.channelTextBuffer || []).forEach(entry => {
+        const [id, text] = entry || [];
+        if (id) channelTextBuffer.set(id, text || '');
+      });
+
+      knownChannels = new Set(saved.knownChannels || []);
+
+      status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0, ...saved.status };
+      totalVideosProcessed = saved.totalVideosProcessed || 0;
+      videosForCurrentKeyword = saved.videosForCurrentKeyword || 0;
+      currentKeyIndex = Math.max(0, Math.min(saved.currentKeyIndex || 0, Math.max((apiKeys || []).length - 1, 0)));
+      running = false;
+      enriching = false;
+      statusMessageEl.textContent = saved.statusMessage || '';
+
+      updateTabUI();
+      updateArchiveExportedLabel();
+      updateProgress();
+      updateStatus();
+      renderChannelTable();
+      return true;
+    }
+
+    function hydrateFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        return applySavedState(parsed);
+      } catch (err) {
+        return false;
+      }
+    }
+
     startBtn.addEventListener('click', startScan);
     stopBtn.addEventListener('click', stopScan);
     downloadCsvBtn.addEventListener('click', downloadCsv);
@@ -666,6 +795,9 @@
     archiveExportedBtn.addEventListener('click', archiveExported);
     activeTabBtn.addEventListener('click', () => switchTab('active'));
     archivedTabBtn.addEventListener('click', () => switchTab('archived'));
+    apiKeysInput.addEventListener('input', handleApiKeysInput);
+    keywordsInput.addEventListener('input', handleKeywordsInput);
+    maxResultsInput.addEventListener('input', handleMaxResultsInput);
     languageToggle.addEventListener('click', toggleLanguageDropdown);
     languageSearchInput.addEventListener('input', handleLanguageSearch);
     languageSelectAllBtn.addEventListener('click', selectAllVisibleLanguages);
@@ -689,6 +821,25 @@
       const cleaned = String(value).replace(/[.,\s]/g, '').trim();
       const num = Number(cleaned);
       return Number.isFinite(num) ? num : null;
+    }
+
+    function handleApiKeysInput() {
+      apiKeys = parseLines(apiKeysInput.value);
+      updateStatus();
+      persistState();
+    }
+
+    function handleKeywordsInput() {
+      keywords = parseLines(keywordsInput.value);
+      persistState();
+    }
+
+    function handleMaxResultsInput(event) {
+      const value = parseInt(event.target.value, 10);
+      maxResultsPerKeyword = Number.isFinite(value) ? value : 1000;
+      maxResultsInput.value = maxResultsPerKeyword;
+      updateProgress();
+      persistState();
     }
 
     function formatWithThousandDots(value) {
@@ -753,6 +904,7 @@
           }
           updateLanguageButtonLabel();
           renderChannelTable();
+          persistState();
         });
         label.appendChild(checkbox);
         const span = document.createElement('span');
@@ -786,6 +938,7 @@
     function handleLanguageSearch(event) {
       filterState.languageSearch = event.target.value || '';
       renderLanguageOptions();
+      persistState();
     }
 
     function selectAllVisibleLanguages() {
@@ -798,6 +951,7 @@
       updateLanguageButtonLabel();
       renderLanguageOptions();
       renderChannelTable();
+      persistState();
     }
 
     function deselectAllVisibleLanguages() {
@@ -810,6 +964,7 @@
       updateLanguageButtonLabel();
       renderLanguageOptions();
       renderChannelTable();
+      persistState();
     }
 
     function handleSubscriberInput(event) {
@@ -823,6 +978,7 @@
       }
       target.value = formatWithThousandDots(digits);
       renderChannelTable();
+      persistState();
     }
 
     function formatSubscriberInput(event) {
@@ -835,16 +991,19 @@
       } else if (target === maxSubsInput) {
         filterState.maxSubs = digits;
       }
+      persistState();
     }
 
     function handleUniqueEmailFilter(event) {
       filterState.uniqueEmails = event.target.checked;
       renderChannelTable();
+      persistState();
     }
 
     function handleTelegramFilter(event) {
       filterState.telegramOnly = event.target.checked;
       renderChannelTable();
+      persistState();
     }
 
     function getEmailWinnerIds() {
@@ -921,6 +1080,7 @@
       selectedTab = tab;
       updateTabUI();
       renderChannelTable();
+      persistState();
     }
 
     function updateTabUI() {
@@ -993,6 +1153,7 @@
       if (moved) {
         updateStatus();
         renderChannelTable();
+        persistState();
       }
     }
 
@@ -1008,6 +1169,7 @@
       if (moved) {
         updateStatus();
         renderChannelTable();
+        persistState();
       }
     }
 
@@ -1016,6 +1178,7 @@
       const filteredIds = getFilteredChannelIds();
       if (!filteredIds.length) return;
       archiveChannelIds(filteredIds);
+      persistState();
     }
 
     function archiveExported() {
@@ -1025,11 +1188,13 @@
       archiveChannelIds(idsToArchive);
       lastExportedChannelIds = new Set();
       updateArchiveExportedLabel();
+      persistState();
     }
 
     function storeLastExported(ids) {
       lastExportedChannelIds = new Set(ids || []);
       updateArchiveExportedLabel();
+      persistState();
     }
 
     async function startScan() {
@@ -1096,6 +1261,7 @@
                 knownChannels.add(channelUrl);
               }
               renderChannelTable();
+              persistState();
             }
           }
 
@@ -1116,6 +1282,7 @@
       running = false;
       updateStatus();
       renderChannelTable();
+      persistState();
     }
 
     async function fetchWithRetries(keyword, pageToken) {
@@ -1279,6 +1446,7 @@
         updateEnrichmentStatus();
         setStatusMessage(`Enriched ${Math.min(processedIds, totalToEnrich)} of ${totalToEnrich} channels…`);
         renderChannelTable();
+        persistState();
       }
 
       if (status.state !== 'All keys exhausted') {
@@ -1288,6 +1456,7 @@
       enriching = false;
       updateStatus();
       renderChannelTable();
+      persistState();
     }
 
     function renderChannelTable() {
@@ -1587,9 +1756,14 @@
       URL.revokeObjectURL(url);
     }
 
-    updateTabUI();
-    updateArchiveExportedLabel();
-    renderChannelTable();
+    const hydrated = hydrateFromStorage();
+    if (!hydrated) {
+      updateTabUI();
+      updateArchiveExportedLabel();
+      updateProgress();
+      updateStatus();
+      renderChannelTable();
+    }
   </script>
 </body>
 </html>
