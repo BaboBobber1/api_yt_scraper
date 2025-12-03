@@ -704,7 +704,12 @@
     let lastFilteredChannelIds = [];
 
     const STORAGE_KEY = 'cryptoYoutubeHarvesterState';
-    const APP_STATE_VERSION = 1;
+    const APP_STATE_VERSION = 2;
+    const DB_NAME = 'crypto-youtube-harvester';
+    const DB_VERSION = 1;
+    const CHANNEL_STORE = 'channels';
+
+    let channelDb = null;
 
     function serializeAppState() {
       return {
@@ -712,11 +717,6 @@
         apiKeys: parseLines(apiKeysInput.value),
         keywords: parseLines(keywordsInput.value),
         maxResultsPerKeyword: parseInt(maxResultsInput.value, 10) || 1000,
-        acceptedChannelIds: Array.from(acceptedChannelIds),
-        archivedChannelIds: Array.from(archivedChannelIds),
-        channelHits: Array.from(channelHits.entries()),
-        channelMeta: Array.from(channelMeta.entries()).map(([id, meta]) => ({ id, ...meta })),
-        enrichedChannelIds: Array.from(enrichedChannelIds),
         selectedTab,
         selectedLanguages: Array.from(selectedLanguages),
         filterState: { ...filterState },
@@ -725,9 +725,7 @@
         statusMessage: statusMessageEl.textContent || '',
         totalVideosProcessed,
         videosForCurrentKeyword,
-        currentKeyIndex,
-        channelTextBuffer: Array.from(channelTextBuffer.entries()),
-        knownChannels: Array.from(knownChannels)
+        currentKeyIndex
       };
     }
 
@@ -742,29 +740,8 @@
 
     function applySavedState(saved) {
       if (!saved) return false;
-      if (saved.version && saved.version !== APP_STATE_VERSION) return false;
 
-      acceptedChannelIds.clear();
-      (saved.acceptedChannelIds || []).forEach(id => acceptedChannelIds.add(id));
-
-      archivedChannelIds.clear();
-      (saved.archivedChannelIds || []).forEach(id => archivedChannelIds.add(id));
-
-      channelHits.clear();
-      (saved.channelHits || []).forEach(entry => {
-        const [id, hits] = entry || [];
-        if (id) channelHits.set(id, hits);
-      });
-
-      channelMeta.clear();
-      (saved.channelMeta || []).forEach(meta => {
-        if (meta && meta.id) {
-          channelMeta.set(meta.id, { ...meta });
-        }
-      });
-
-      enrichedChannelIds.clear();
-      (saved.enrichedChannelIds || []).forEach(id => enrichedChannelIds.add(id));
+      if (saved.version && saved.version > APP_STATE_VERSION) return false;
 
       selectedLanguages.clear();
       (saved.selectedLanguages || []).forEach(lang => selectedLanguages.add(lang));
@@ -799,14 +776,6 @@
       globalSearchInput.value = filterState.searchText;
       updateLanguageButtonLabel();
 
-      channelTextBuffer.clear();
-      (saved.channelTextBuffer || []).forEach(entry => {
-        const [id, text] = entry || [];
-        if (id) channelTextBuffer.set(id, text || '');
-      });
-
-      knownChannels = new Set(saved.knownChannels || []);
-
       status = { state: 'Idle', keyword: '-', page: 0, keyIndex: 0, ...saved.status };
       totalVideosProcessed = saved.totalVideosProcessed || 0;
       videosForCurrentKeyword = saved.videosForCurrentKeyword || 0;
@@ -819,7 +788,6 @@
       updateArchiveExportedLabel();
       updateProgress();
       updateStatus();
-      renderChannelTable();
       return true;
     }
 
@@ -1233,6 +1201,7 @@
         updateStatus();
         renderChannelTable();
         persistState();
+        persistChannelRecords(ids);
       }
     }
 
@@ -1249,6 +1218,7 @@
         updateStatus();
         renderChannelTable();
         persistState();
+        persistChannelRecords(ids);
       }
     }
 
@@ -1332,6 +1302,7 @@
             const prevHits = channelHits.get(channelId) || 0;
             const newHits = prevHits + 1;
             channelHits.set(channelId, newHits);
+            persistChannelRecord(channelId);
 
             if (newHits >= MIN_CRYPTO_VIDEOS && !acceptedChannelIds.has(channelId) && !archivedChannelIds.has(channelId)) {
               acceptedChannelIds.add(channelId);
@@ -1341,6 +1312,7 @@
               }
               renderChannelTable();
               persistState();
+              persistChannelRecord(channelId);
             }
           }
 
@@ -1436,6 +1408,7 @@
       if (parts.length >= 5) return;
       parts.push(snippet.slice(0, 300));
       channelTextBuffer.set(channelId, parts.join('\n'));
+      saveChannelTextBuffer(channelId);
     }
 
     function updateEnrichmentStatus() {
@@ -1522,6 +1495,7 @@
             cryptoHits
           });
           enrichedChannelIds.add(channelId);
+          persistChannelRecord(channelId);
         }
 
         processedIds += batch.length;
@@ -1861,14 +1835,209 @@
       URL.revokeObjectURL(url);
     }
 
-    const hydrated = hydrateFromStorage();
-    if (!hydrated) {
+    function openChannelDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(CHANNEL_STORE)) {
+            db.createObjectStore(CHANNEL_STORE, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function getAllChannelsFromDb() {
+      return new Promise((resolve, reject) => {
+        if (!channelDb) return resolve([]);
+        const tx = channelDb.transaction(CHANNEL_STORE, 'readonly');
+        const store = tx.objectStore(CHANNEL_STORE);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function clearChannelsInDb() {
+      return new Promise((resolve, reject) => {
+        if (!channelDb) return resolve();
+        const tx = channelDb.transaction(CHANNEL_STORE, 'readwrite');
+        const store = tx.objectStore(CHANNEL_STORE);
+        const req = store.clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function persistChannelRecord(channelId) {
+      if (!channelDb || !channelId) return;
+      try {
+        const record = buildChannelRecord(channelId);
+        const tx = channelDb.transaction(CHANNEL_STORE, 'readwrite');
+        const store = tx.objectStore(CHANNEL_STORE);
+        store.put(record);
+      } catch (err) {
+        // ignore persistence errors
+      }
+    }
+
+    function buildChannelRecord(channelId) {
+      const meta = channelMeta.get(channelId) || null;
+      const url = meta?.url || `https://www.youtube.com/channel/${channelId}`;
+      return {
+        id: channelId,
+        archived: archivedChannelIds.has(channelId),
+        hits: channelHits.get(channelId) || 0,
+        enriched: enrichedChannelIds.has(channelId),
+        meta: meta ? { ...meta, url } : { id: channelId, url },
+        text: channelTextBuffer.get(channelId) || '',
+        knownUrl: url
+      };
+    }
+
+    function persistChannelRecords(ids = []) {
+      ids.forEach(id => persistChannelRecord(id));
+    }
+
+    function applyChannelRecords(records = []) {
+      acceptedChannelIds.clear();
+      archivedChannelIds.clear();
+      channelHits.clear();
+      channelMeta.clear();
+      channelTextBuffer.clear();
+      enrichedChannelIds.clear();
+      knownChannels = new Set();
+
+      for (const record of records) {
+        if (!record || !record.id) continue;
+        const id = record.id;
+        if (record.archived) {
+          archivedChannelIds.add(id);
+        } else {
+          acceptedChannelIds.add(id);
+        }
+        if (record.hits !== undefined) {
+          channelHits.set(id, record.hits);
+        }
+        if (record.meta) {
+          const url = record.meta.url || `https://www.youtube.com/channel/${id}`;
+          channelMeta.set(id, { ...record.meta, url });
+          knownChannels.add(url);
+        }
+        if (record.enriched) {
+          enrichedChannelIds.add(id);
+        }
+        if (record.text) {
+          channelTextBuffer.set(id, record.text || '');
+        }
+        if (record.knownUrl) {
+          knownChannels.add(record.knownUrl);
+        }
+      }
+    }
+
+    function extractLegacyChannelRecords(savedState) {
+      if (!savedState) return [];
+      const accepted = new Set(savedState.acceptedChannelIds || []);
+      const archived = new Set(savedState.archivedChannelIds || []);
+      const enriched = new Set(savedState.enrichedChannelIds || []);
+      const hits = new Map((savedState.channelHits || []).map(entry => entry || []).filter(entry => entry.length >= 2));
+      const meta = new Map((savedState.channelMeta || []).map(item => [item.id, item]));
+      const text = new Map((savedState.channelTextBuffer || []).map(entry => entry || []).filter(entry => entry.length >= 2));
+      const allIds = new Set([...accepted, ...archived, ...hits.keys(), ...meta.keys(), ...text.keys()]);
+
+      const records = [];
+      for (const id of allIds) {
+        const metaEntry = meta.get(id) || null;
+        const url = metaEntry?.url || `https://www.youtube.com/channel/${id}`;
+        records.push({
+          id,
+          archived: archived.has(id),
+          hits: hits.get(id) || 0,
+          enriched: enriched.has(id),
+          meta: metaEntry ? { ...metaEntry, url } : { id, url },
+          text: text.get(id) || '',
+          knownUrl: url
+        });
+      }
+      return records;
+    }
+
+    async function migrateLegacyChannelsIfNeeded(savedState) {
+      if (!channelDb) return [];
+      const existing = await getAllChannelsFromDb();
+      if (existing.length > 0) return existing;
+      const legacyRecords = extractLegacyChannelRecords(savedState);
+      if (!legacyRecords.length) return [];
+
+      await Promise.all(legacyRecords.map(record => {
+        return new Promise(resolve => {
+          try {
+            const tx = channelDb.transaction(CHANNEL_STORE, 'readwrite');
+            const store = tx.objectStore(CHANNEL_STORE);
+            store.put(record);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch (err) {
+            resolve();
+          }
+        });
+      }));
+
+      return legacyRecords;
+    }
+
+    function saveChannelTextBuffer(id) {
+      if (!id) return;
+      persistChannelRecord(id);
+    }
+
+    function hydrateConfig() {
+      return hydrateFromStorage();
+    }
+
+    async function initializeApp() {
+      const savedConfig = hydrateConfig();
+      try {
+        channelDb = await openChannelDatabase();
+      } catch (err) {
+        channelDb = null;
+      }
+
+      let records = [];
+      try {
+        records = await getAllChannelsFromDb();
+      } catch (err) {
+        records = [];
+      }
+
+      if (!records.length) {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        let parsed = null;
+        try {
+          parsed = raw ? JSON.parse(raw) : null;
+        } catch (err) {
+          parsed = null;
+        }
+        const migrated = await migrateLegacyChannelsIfNeeded(parsed);
+        if (migrated.length) {
+          applySavedState(parsed);
+          records = migrated;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAppState()));
+        }
+      }
+
+      applyChannelRecords(records);
       updateTabUI();
       updateArchiveExportedLabel();
       updateProgress();
       updateStatus();
       renderChannelTable();
     }
+
+    initializeApp();
   </script>
 </body>
 </html>
