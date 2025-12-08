@@ -456,12 +456,24 @@
     .language-actions {
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .language-actions .small {
       padding: 8px 10px;
       font-size: 13px;
       border-radius: 8px;
+    }
+
+    .language-actions select {
+      background: var(--input);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      height: 38px;
+      min-width: 180px;
     }
 
     .language-options {
@@ -601,6 +613,13 @@
               <div class="language-actions">
                 <button type="button" class="neutral small" id="languageSelectAll">Select all</button>
                 <button type="button" class="neutral small" id="languageDeselectAll">Deselect all</button>
+                <button type="button" class="neutral small" id="languageOpenAll">Open all groups</button>
+                <button type="button" class="neutral small" id="languageCloseAll">Close all groups</button>
+              </div>
+              <div class="language-actions">
+                <button type="button" class="neutral small" id="saveLanguagePreset">Save current as preset</button>
+                <select id="languagePresetSelect" aria-label="Language presets"></select>
+                <button type="button" class="neutral small" id="applyLanguagePreset">Apply preset</button>
               </div>
             </div>
             <div class="language-options" id="languageOptions"></div>
@@ -706,6 +725,11 @@
     const languageOptionsEl = document.getElementById('languageOptions');
     const languageSelectAllBtn = document.getElementById('languageSelectAll');
     const languageDeselectAllBtn = document.getElementById('languageDeselectAll');
+    const languageOpenAllBtn = document.getElementById('languageOpenAll');
+    const languageCloseAllBtn = document.getElementById('languageCloseAll');
+    const saveLanguagePresetBtn = document.getElementById('saveLanguagePreset');
+    const applyLanguagePresetBtn = document.getElementById('applyLanguagePreset');
+    const languagePresetSelect = document.getElementById('languagePresetSelect');
     const minSubsInput = document.getElementById('minSubsFilter');
     const maxSubsInput = document.getElementById('maxSubsFilter');
     const uniqueEmailCheckbox = document.getElementById('uniqueEmailFilter');
@@ -900,12 +924,14 @@
     let lastFilteredChannelIds = [];
 
     const STORAGE_KEY = 'cryptoYoutubeHarvesterState';
+    const LANGUAGE_PRESETS_KEY = 'cryptoYoutubeLanguagePresets';
     const APP_STATE_VERSION = 2;
     const DB_NAME = 'crypto-youtube-harvester';
     const DB_VERSION = 1;
     const CHANNEL_STORE = 'channels';
 
     let channelDb = null;
+    let languagePresets = {};
 
     function serializeAppState() {
       return {
@@ -1013,6 +1039,10 @@
     languageSearchInput.addEventListener('input', handleLanguageSearch);
     languageSelectAllBtn.addEventListener('click', selectAllVisibleLanguages);
     languageDeselectAllBtn.addEventListener('click', deselectAllVisibleLanguages);
+    languageOpenAllBtn.addEventListener('click', openAllLanguageGroups);
+    languageCloseAllBtn.addEventListener('click', closeAllLanguageGroups);
+    saveLanguagePresetBtn.addEventListener('click', saveCurrentLanguagePreset);
+    applyLanguagePresetBtn.addEventListener('click', applySelectedLanguagePreset);
     minSubsInput.addEventListener('input', handleSubscriberInput);
     maxSubsInput.addEventListener('input', handleSubscriberInput);
     minSubsInput.addEventListener('blur', formatSubscriberInput);
@@ -1023,6 +1053,8 @@
     document.addEventListener('click', handleOutsideClick);
 
     updateLanguageButtonLabel();
+    languagePresets = loadLanguagePresets();
+    updateLanguagePresetOptions();
 
     function parseLines(value) {
       return value.split('\n').map(v => v.trim()).filter(Boolean);
@@ -1103,6 +1135,56 @@
       return `${lang} (${label})`;
     }
 
+    function getLanguageGroups() {
+      const groups = new Set();
+      for (const lang of getAvailableLanguages()) {
+        groups.add(getLanguageMeta(lang).group);
+      }
+      return Array.from(groups);
+    }
+
+    function loadLanguagePresets() {
+      try {
+        const raw = localStorage.getItem(LANGUAGE_PRESETS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (err) {
+        return {};
+      }
+    }
+
+    function persistLanguagePresets() {
+      try {
+        localStorage.setItem(LANGUAGE_PRESETS_KEY, JSON.stringify(languagePresets));
+      } catch (err) {
+        // ignore preset persistence errors
+      }
+    }
+
+    function updateLanguagePresetOptions(selectedName = '') {
+      languagePresetSelect.innerHTML = '';
+      const names = Object.keys(languagePresets || {}).sort((a, b) => a.localeCompare(b));
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = names.length ? 'Choose preset' : 'No presets saved';
+      placeholder.disabled = !names.length;
+      placeholder.selected = !selectedName;
+      languagePresetSelect.appendChild(placeholder);
+
+      for (const name of names) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        option.selected = selectedName === name;
+        languagePresetSelect.appendChild(option);
+      }
+
+      const disabled = !names.length;
+      languagePresetSelect.disabled = disabled;
+      applyLanguagePresetBtn.disabled = disabled;
+    }
+
     function renderLanguageOptions() {
       const searchTerm = filterState.languageSearch.toLowerCase();
       const languages = getAvailableLanguages().filter(lang => {
@@ -1155,7 +1237,7 @@
         }
 
         const titleLabel = document.createElement('span');
-        titleLabel.textContent = group;
+        titleLabel.textContent = `${group} (${langs.length})`;
         const indicator = document.createElement('span');
         indicator.className = 'language-group-toggle';
         indicator.textContent = collapsed ? '▶' : '▼';
@@ -1252,6 +1334,46 @@
         return lang.toLowerCase().includes(searchTerm) || label.includes(searchTerm);
       });
       languages.forEach(lang => selectedLanguages.delete(lang));
+      updateLanguageButtonLabel();
+      renderLanguageOptions();
+      renderChannelTable();
+      persistState();
+    }
+
+    function setAllLanguageGroups(collapsed) {
+      for (const group of getLanguageGroups()) {
+        languageGroupState.set(group, collapsed);
+      }
+      renderLanguageOptions();
+    }
+
+    function openAllLanguageGroups() {
+      setAllLanguageGroups(false);
+    }
+
+    function closeAllLanguageGroups() {
+      setAllLanguageGroups(true);
+    }
+
+    function saveCurrentLanguagePreset() {
+      const name = (prompt('Preset name:') || '').trim();
+      if (!name) return;
+
+      if (languagePresets[name] && !confirm(`Preset "${name}" exists. Overwrite?`)) {
+        return;
+      }
+
+      languagePresets[name] = Array.from(selectedLanguages);
+      persistLanguagePresets();
+      updateLanguagePresetOptions(name);
+    }
+
+    function applySelectedLanguagePreset() {
+      const name = languagePresetSelect.value;
+      if (!name || !languagePresets[name]) return;
+
+      selectedLanguages.clear();
+      (languagePresets[name] || []).forEach(lang => selectedLanguages.add(lang));
       updateLanguageButtonLabel();
       renderLanguageOptions();
       renderChannelTable();
