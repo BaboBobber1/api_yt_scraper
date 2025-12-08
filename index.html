@@ -488,12 +488,26 @@
       letter-spacing: 0.2px;
       color: #cfd3f0;
       font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
     }
 
     .language-group-options {
       display: flex;
       flex-direction: column;
       gap: 8px;
+    }
+
+    .language-group.collapsed .language-group-options {
+      display: none;
+    }
+
+    .language-group-toggle {
+      color: var(--muted);
+      font-size: 12px;
     }
 
     .language-option {
@@ -699,6 +713,7 @@
     const globalSearchInput = document.getElementById('globalSearchInput');
 
     const selectedLanguages = new Set();
+    const languageGroupState = new Map();
     const LANGUAGE_META = {
       'AE (Arabic)': { label: 'United Arab Emirates, Arabic', group: 'Arabic / MENA' },
       'af': { label: 'Afrikaans', group: 'Other / Misc' },
@@ -800,6 +815,58 @@
       'PY': { label: 'Paraguay, Spanish', group: 'Spanish (Latin America)' },
       'QA': { label: 'Qatar', group: 'Arabic / MENA' },
       'RE': { label: 'Réunion, French', group: 'French' },
+      'AE': { label: 'United Arab Emirates, Arabic', group: 'Arabic / MENA' },
+      'af': { label: 'Afrikaans', group: 'Africa' },
+      'am': { label: 'Amharic', group: 'Africa' },
+      'AU': { label: 'Australia, English', group: 'English' },
+      'az': { label: 'Azerbaijan, Azerbaijani', group: 'Central / Eastern Europe' },
+      'BR': { label: 'Brazil, Portuguese', group: 'Portuguese' },
+      'CA': { label: 'Canada', group: 'English' },
+      'CH': { label: 'China, Chinese', group: 'East Asia' },
+      'DE': { label: 'Germany, German', group: 'German / DACH' },
+      'ES': { label: 'Spain, Spanish', group: 'Spanish' },
+      'FR': { label: 'France, French', group: 'French' },
+      'HK': { label: 'Hong Kong, Chinese', group: 'East Asia' },
+      'IL': { label: 'Israel', group: 'Other / Middle East' },
+      'IN': { label: 'India', group: 'India / Subcontinent' },
+      'IT': { label: 'Italy, Italian', group: 'Italian' },
+      'JP': { label: 'Japan, Japanese', group: 'East Asia' },
+      'KR': { label: 'South Korea, Korean', group: 'East Asia' },
+      'MX': { label: 'Mexico, Spanish', group: 'Spanish (Latin America)' },
+      'ro': { label: 'Romanian', group: 'Central / Eastern Europe' },
+      'RO': { label: 'Romania', group: 'Central / Eastern Europe' },
+      'RS': { label: 'Serbia', group: 'Central / Eastern Europe' },
+      'ru': { label: 'Russian', group: 'Central / Eastern Europe' },
+      'RU': { label: 'Russia', group: 'Central / Eastern Europe' },
+      'SA': { label: 'Saudi Arabia, Arabic', group: 'Arabic / MENA' },
+      'SE': { label: 'Sweden', group: 'Nordics' },
+      'SG': { label: 'Singapore', group: 'SEA' },
+      'SI': { label: 'Slovenia', group: 'Central / Eastern Europe' },
+      'SK': { label: 'Slovakia', group: 'Central / Eastern Europe' },
+      'SN': { label: 'Senegal', group: 'Africa' },
+      'SV': { label: 'El Salvador, Spanish', group: 'Spanish (Latin America)' },
+      'sw': { label: 'Swahili', group: 'Africa' },
+      'ta': { label: 'Tamil', group: 'India / Subcontinent' },
+      'te': { label: 'Telugu', group: 'India / Subcontinent' },
+      'th': { label: 'Thai', group: 'SEA' },
+      'TH': { label: 'Thailand', group: 'SEA' },
+      'TN': { label: 'Tunisia, Arabic', group: 'Arabic / MENA' },
+      'tr': { label: 'Turkish', group: 'Other / Eurasia' },
+      'TR': { label: 'Turkey', group: 'Other / Eurasia' },
+      'TW': { label: 'Taiwan, Chinese', group: 'East Asia' },
+      'TZ': { label: 'Tanzania', group: 'Africa' },
+      'UA': { label: 'Ukraine', group: 'Central / Eastern Europe' },
+      'UG': { label: 'Uganda', group: 'Africa' },
+      'uk': { label: 'Ukrainian', group: 'Central / Eastern Europe' },
+      'ur': { label: 'Urdu', group: 'India / Subcontinent' },
+      'US': { label: 'United States, English', group: 'English' },
+      'UY': { label: 'Uruguay, Spanish', group: 'Spanish (Latin America)' },
+      'VE': { label: 'Venezuela, Spanish', group: 'Spanish (Latin America)' },
+      'VG': { label: 'British Virgin Islands, English', group: 'English' },
+      'vi': { label: 'Vietnamese', group: 'SEA' },
+      'VN': { label: 'Vietnam', group: 'SEA' },
+      'ZA': { label: 'South Africa', group: 'Africa' },
+      'ZW': { label: 'Zimbabwe', group: 'Africa' },
     };
     const LANGUAGE_GROUPS_ORDER = [
       'English',
@@ -1077,7 +1144,29 @@
 
         const title = document.createElement('div');
         title.className = 'language-group-title';
-        title.textContent = group;
+        if (!languageGroupState.has(group)) {
+          languageGroupState.set(group, false);
+        }
+
+        let collapsed = languageGroupState.get(group);
+        if (searchTerm && langs.length) {
+          collapsed = false;
+          languageGroupState.set(group, false);
+        }
+
+        const titleLabel = document.createElement('span');
+        titleLabel.textContent = group;
+        const indicator = document.createElement('span');
+        indicator.className = 'language-group-toggle';
+        indicator.textContent = collapsed ? '▶' : '▼';
+        title.appendChild(titleLabel);
+        title.appendChild(indicator);
+
+        title.addEventListener('click', () => {
+          const nextState = !languageGroupState.get(group);
+          languageGroupState.set(group, nextState);
+          renderLanguageOptions();
+        });
         section.appendChild(title);
 
         const list = document.createElement('div');
@@ -1108,6 +1197,7 @@
           list.appendChild(label);
         }
 
+        section.classList.toggle('collapsed', collapsed);
         section.appendChild(list);
         languageOptionsEl.appendChild(section);
       }
