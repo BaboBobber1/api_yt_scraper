@@ -480,9 +480,21 @@
       max-height: 420px;
       overflow: auto;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
       padding-right: 6px;
+    }
+
+    @media (max-width: 1100px) {
+      .language-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .language-options {
+        grid-template-columns: 1fr;
+      }
     }
 
     .language-group {
@@ -738,6 +750,7 @@
 
     const selectedLanguages = new Set();
     const languageGroupState = new Map();
+    const NO_LANGUAGE_CODE = 'NONE';
     const LANGUAGE_META = {
       'AE (Arabic)': { label: 'United Arab Emirates, Arabic', group: 'Arabic / MENA' },
       'af': { label: 'Afrikaans', group: 'Other / Misc' },
@@ -891,6 +904,7 @@
       'VN': { label: 'Vietnam', group: 'SEA' },
       'ZA': { label: 'South Africa', group: 'Africa' },
       'ZW': { label: 'Zimbabwe', group: 'Africa' },
+      'NONE': { label: 'No language / unknown', group: 'Other / Misc' },
     };
     const LANGUAGE_GROUPS_ORDER = [
       'English',
@@ -1111,13 +1125,25 @@
       return counts;
     }
 
+    function getEffectiveLanguageCode(language) {
+      const normalized = typeof language === 'string' ? language.trim() : '';
+      return normalized || NO_LANGUAGE_CODE;
+    }
+
     function getAvailableLanguages() {
-      const langs = [];
-      for (const meta of channelMeta.values()) {
-        const lang = (meta.language || '').trim();
-        if (lang) langs.push(lang);
+      const langs = new Set();
+      const allIds = new Set([
+        ...acceptedChannelIds,
+        ...archivedChannelIds
+      ]);
+
+      for (const id of allIds) {
+        const meta = channelMeta.get(id) || {};
+        const lang = getEffectiveLanguageCode(meta.language);
+        langs.add(lang);
       }
-      return Array.from(new Set(langs)).sort((a, b) => a.localeCompare(b));
+
+      return Array.from(langs).sort((a, b) => a.localeCompare(b));
     }
 
     function updateLanguageButtonLabel() {
@@ -1127,7 +1153,11 @@
     }
 
     function getLanguageMeta(lang) {
-      return LANGUAGE_META[lang] || { label: lang, group: 'Other / Misc' };
+      const code = lang || NO_LANGUAGE_CODE;
+      if (!LANGUAGE_META[code]) {
+        LANGUAGE_META[code] = { label: code, group: 'Other / Misc' };
+      }
+      return LANGUAGE_META[code];
     }
 
     function getLanguageLabel(lang) {
@@ -1453,7 +1483,13 @@
       const baseIds = selectedTab === 'archived'
         ? Array.from(archivedChannelIds || [])
         : Array.from(acceptedChannelIds || []);
-      const languageActive = selectedLanguages.size > 0;
+      const allLanguageCodes = new Set(getAvailableLanguages());
+      const allLanguagesCount = allLanguageCodes.size;
+      const selectedLanguageCount = selectedLanguages.size;
+      const languageFilterActive =
+        allLanguagesCount > 0 &&
+        selectedLanguageCount > 0 &&
+        selectedLanguageCount < allLanguagesCount;
       const minVal = filterState.minSubs !== '' ? parseSubscriberCount(filterState.minSubs) : null;
       const maxVal = filterState.maxSubs !== '' ? parseSubscriberCount(filterState.maxSubs) : null;
 
@@ -1461,8 +1497,8 @@
 
       for (const id of baseIds) {
         const meta = channelMeta.get(id) || {};
-        const language = (meta.language || '').trim();
-        if (languageActive && (!language || !selectedLanguages.has(language))) continue;
+        const language = getEffectiveLanguageCode(meta.language);
+        if (languageFilterActive && !selectedLanguages.has(language)) continue;
 
         const subsNum = parseSubscriberCount(meta.subs);
         if (minVal !== null) {
