@@ -426,10 +426,14 @@
       background: #0f0f19;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 12px;
-      min-width: 260px;
+      min-width: 520px;
+      max-width: 900px;
+      width: min(780px, 80vw);
       z-index: 10;
       box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-      padding: 12px;
+      padding: 14px;
+      max-height: 540px;
+      overflow: hidden;
     }
 
     .language-dropdown-header {
@@ -461,8 +465,32 @@
     }
 
     .language-options {
-      max-height: 220px;
-      overflow-y: auto;
+      max-height: 420px;
+      overflow: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      padding-right: 6px;
+    }
+
+    .language-group {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 10px;
+      background: rgba(255,255,255,0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .language-group-title {
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      color: #cfd3f0;
+      font-size: 14px;
+    }
+
+    .language-group-options {
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -671,27 +699,128 @@
     const globalSearchInput = document.getElementById('globalSearchInput');
 
     const selectedLanguages = new Set();
-    const LANGUAGE_LABELS = {
-      AE: 'Arabic',
-      AU: 'English',
-      BR: 'Portuguese',
-      CA: 'English',
-      CH: 'Chinese',
-      CN: 'Chinese',
-      DE: 'German',
-      ES: 'Spanish',
-      FR: 'French',
-      HK: 'Chinese',
-      IN: 'Hindi',
-      IT: 'Italian',
-      JP: 'Japanese',
-      KR: 'Korean',
-      MX: 'Spanish',
-      RU: 'Russian',
-      TR: 'Turkish',
-      UK: 'English',
-      US: 'English'
+    const LANGUAGE_META = {
+      'AE (Arabic)': { label: 'United Arab Emirates, Arabic', group: 'Arabic / MENA' },
+      'af': { label: 'Afrikaans', group: 'Other / Misc' },
+      'am': { label: 'Amharic', group: 'Other / Misc' },
+      'AR': { label: 'Argentina, Spanish', group: 'Spanish (Latin America)' },
+      'AT': { label: 'Austria, German', group: 'German / DACH' },
+      'AU (English)': { label: 'Australia, English', group: 'English' },
+      'az': { label: 'Azerbaijani', group: 'Other / Misc' },
+      'BD': { label: 'Bangladesh, Bengali', group: 'India / Subcontinent' },
+      'be': { label: 'Belarusian', group: 'Central / Eastern Europe' },
+      'BE': { label: 'Belgium', group: 'Benelux' },
+      'bg': { label: 'Bulgarian', group: 'Central / Eastern Europe' },
+      'BG': { label: 'Bulgaria', group: 'Central / Eastern Europe' },
+      'bn': { label: 'Bengali', group: 'India / Subcontinent' },
+      'BO': { label: 'Bolivia, Spanish', group: 'Spanish (Latin America)' },
+      'BR (Portuguese)': { label: 'Brazil, Portuguese', group: 'Portuguese' },
+      'BY': { label: 'Belarus', group: 'Central / Eastern Europe' },
+      'CA (English)': { label: 'Canada, English', group: 'English' },
+      'CH (Chinese)': { label: 'China, Chinese', group: 'East Asia' },
+      'CL': { label: 'Chile, Spanish', group: 'Spanish (Latin America)' },
+      'CO': { label: 'Colombia, Spanish', group: 'Spanish (Latin America)' },
+      'CR': { label: 'Costa Rica, Spanish', group: 'Spanish (Latin America)' },
+      'CY': { label: 'Cyprus', group: 'Other Europe' },
+      'CZ': { label: 'Czech Republic', group: 'Central / Eastern Europe' },
+      'de': { label: 'German', group: 'German / DACH' },
+      'DE (German)': { label: 'Germany, German', group: 'German / DACH' },
+      'DK': { label: 'Denmark', group: 'Nordics' },
+      'DO': { label: 'Dominican Republic, Spanish', group: 'Spanish (Latin America)' },
+      'DZ': { label: 'Algeria', group: 'Arabic / MENA' },
+      'EC': { label: 'Ecuador, Spanish', group: 'Spanish (Latin America)' },
+      'EE': { label: 'Estonia', group: 'Other Europe' },
+      'EG': { label: 'Egypt', group: 'Arabic / MENA' },
+      'en': { label: 'English', group: 'English' },
+      'en-GB': { label: 'United Kingdom, English', group: 'English' },
+      'en-IN': { label: 'India, English', group: 'India / Subcontinent' },
+      'es': { label: 'Spanish', group: 'Spanish' },
+      'ES (Spanish)': { label: 'Spain, Spanish', group: 'Spanish' },
+      'es-419': { label: 'Spanish (Latin America & Caribbean)', group: 'Spanish (Latin America)' },
+      'es-US': { label: 'United States, Spanish', group: 'Spanish' },
+      'fil': { label: 'Filipino', group: 'SEA' },
+      'fr': { label: 'French', group: 'French' },
+      'FR (French)': { label: 'France, French', group: 'French' },
+      'fr-CA': { label: 'Canada, French', group: 'French' },
+      'GB': { label: 'United Kingdom (region)', group: 'English' },
+      'GE': { label: 'Georgia', group: 'Central / Eastern Europe' },
+      'GH': { label: 'Ghana', group: 'Africa' },
+      'GR': { label: 'Greece', group: 'Other Europe' },
+      'hi': { label: 'Hindi', group: 'India / Subcontinent' },
+      'HK (Chinese)': { label: 'Hong Kong, Chinese', group: 'East Asia' },
+      'HN': { label: 'Honduras, Spanish', group: 'Spanish (Latin America)' },
+      'HR': { label: 'Croatia', group: 'Central / Eastern Europe' },
+      'HU': { label: 'Hungary', group: 'Central / Eastern Europe' },
+      'id': { label: 'Indonesian', group: 'SEA' },
+      'ID': { label: 'Indonesia', group: 'SEA' },
+      'IE': { label: 'Ireland', group: 'English' },
+      'IL': { label: 'Israel', group: 'Other / Misc' },
+      'IN (Hindi)': { label: 'India, Hindi', group: 'India / Subcontinent' },
+      'IQ': { label: 'Iraq', group: 'Arabic / MENA' },
+      'it': { label: 'Italian', group: 'Italian' },
+      'IT (Italian)': { label: 'Italy, Italian', group: 'Italian' },
+      'JM': { label: 'Jamaica', group: 'English' },
+      'JP (Japanese)': { label: 'Japan, Japanese', group: 'East Asia' },
+      'KE': { label: 'Kenya', group: 'Africa' },
+      'KH': { label: 'Cambodia', group: 'SEA' },
+      'ko': { label: 'Korean', group: 'East Asia' },
+      'KR (Korean)': { label: 'South Korea, Korean', group: 'East Asia' },
+      'KW': { label: 'Kuwait', group: 'Arabic / MENA' },
+      'ky': { label: 'Kyrgyz', group: 'Central / Eastern Europe' },
+      'KZ': { label: 'Kazakhstan', group: 'Central / Eastern Europe' },
+      'LK': { label: 'Sri Lanka', group: 'India / Subcontinent' },
+      'LT': { label: 'Lithuania', group: 'Baltics' },
+      'LV': { label: 'Latvia', group: 'Baltics' },
+      'MA': { label: 'Morocco', group: 'Arabic / MENA' },
+      'MD': { label: 'Moldova', group: 'Central / Eastern Europe' },
+      'ME': { label: 'Montenegro', group: 'Central / Eastern Europe' },
+      'MK': { label: 'North Macedonia', group: 'Central / Eastern Europe' },
+      'mr': { label: 'Marathi', group: 'India / Subcontinent' },
+      'MT': { label: 'Malta', group: 'Other Europe' },
+      'MX (Spanish)': { label: 'Mexico, Spanish', group: 'Spanish (Latin America)' },
+      'my': { label: 'Myanmar (Burmese)', group: 'SEA' },
+      'MY': { label: 'Malaysia', group: 'SEA' },
+      'ne': { label: 'Nepali', group: 'India / Subcontinent' },
+      'NG': { label: 'Nigeria', group: 'Africa' },
+      'nl': { label: 'Dutch', group: 'Benelux' },
+      'NL': { label: 'Netherlands', group: 'Benelux' },
+      'NO': { label: 'Norway', group: 'Nordics' },
+      'NP': { label: 'Nepal', group: 'India / Subcontinent' },
+      'NZ': { label: 'New Zealand', group: 'English' },
+      'PA': { label: 'Panama, Spanish', group: 'Spanish (Latin America)' },
+      'PE': { label: 'Peru, Spanish', group: 'Spanish (Latin America)' },
+      'PH': { label: 'Philippines', group: 'SEA' },
+      'PK': { label: 'Pakistan', group: 'India / Subcontinent' },
+      'pl': { label: 'Polish', group: 'Central / Eastern Europe' },
+      'PL': { label: 'Poland', group: 'Central / Eastern Europe' },
+      'PR': { label: 'Puerto Rico, Spanish', group: 'Spanish (Latin America)' },
+      'pt': { label: 'Portuguese', group: 'Portuguese' },
+      'PT': { label: 'Portugal', group: 'Portuguese' },
+      'pt-PT': { label: 'Portugal, Portuguese', group: 'Portuguese' },
+      'PY': { label: 'Paraguay, Spanish', group: 'Spanish (Latin America)' },
+      'QA': { label: 'Qatar', group: 'Arabic / MENA' },
+      'RE': { label: 'Réunion, French', group: 'French' },
     };
+    const LANGUAGE_GROUPS_ORDER = [
+      'English',
+      'German / DACH',
+      'Spanish',
+      'Spanish (Latin America)',
+      'Portuguese',
+      'French',
+      'Italian',
+      'Arabic / MENA',
+      'India / Subcontinent',
+      'SEA',
+      'East Asia',
+      'Central / Eastern Europe',
+      'Nordics',
+      'Benelux',
+      'Baltics',
+      'Other Europe',
+      'Africa',
+      'Other / Misc'
+    ];
     let languageDropdownOpen = false;
     const filterState = {
       languageSearch: '',
@@ -898,9 +1027,13 @@
       languageToggle.classList.toggle('active', languageDropdownOpen || count > 0);
     }
 
+    function getLanguageMeta(lang) {
+      return LANGUAGE_META[lang] || { label: lang, group: 'Other / Misc' };
+    }
+
     function getLanguageLabel(lang) {
-      const name = LANGUAGE_LABELS[lang];
-      return name ? `${lang} (${name})` : lang;
+      const { label } = getLanguageMeta(lang);
+      return `${lang} (${label})`;
     }
 
     function renderLanguageOptions() {
@@ -921,27 +1054,62 @@
         return;
       }
 
+      const groupedLanguages = new Map();
       for (const lang of languages) {
-        const label = document.createElement('label');
-        label.className = 'language-option';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = selectedLanguages.has(lang);
-        checkbox.addEventListener('change', () => {
-          if (checkbox.checked) {
-            selectedLanguages.add(lang);
-          } else {
-            selectedLanguages.delete(lang);
-          }
-          updateLanguageButtonLabel();
-          renderChannelTable();
-          persistState();
-        });
-        label.appendChild(checkbox);
-        const span = document.createElement('span');
-        span.textContent = getLanguageLabel(lang);
-        label.appendChild(span);
-        languageOptionsEl.appendChild(label);
+        const group = getLanguageMeta(lang).group;
+        if (!groupedLanguages.has(group)) {
+          groupedLanguages.set(group, []);
+        }
+        groupedLanguages.get(group).push(lang);
+      }
+
+      const orderedGroups = [
+        ...LANGUAGE_GROUPS_ORDER,
+        ...Array.from(groupedLanguages.keys()).filter(group => !LANGUAGE_GROUPS_ORDER.includes(group))
+      ];
+
+      for (const group of orderedGroups) {
+        const langs = groupedLanguages.get(group);
+        if (!langs || !langs.length) continue;
+
+        const section = document.createElement('div');
+        section.className = 'language-group';
+
+        const title = document.createElement('div');
+        title.className = 'language-group-title';
+        title.textContent = group;
+        section.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'language-group-options';
+
+        langs.sort((a, b) => getLanguageLabel(a).localeCompare(getLanguageLabel(b)));
+
+        for (const lang of langs) {
+          const label = document.createElement('label');
+          label.className = 'language-option';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = selectedLanguages.has(lang);
+          checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+              selectedLanguages.add(lang);
+            } else {
+              selectedLanguages.delete(lang);
+            }
+            updateLanguageButtonLabel();
+            renderChannelTable();
+            persistState();
+          });
+          label.appendChild(checkbox);
+          const span = document.createElement('span');
+          span.textContent = getLanguageLabel(lang);
+          label.appendChild(span);
+          list.appendChild(label);
+        }
+
+        section.appendChild(list);
+        languageOptionsEl.appendChild(section);
       }
     }
 
